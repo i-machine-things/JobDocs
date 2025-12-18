@@ -4,6 +4,8 @@ A modular tool for managing blueprint files and customer job directories with su
 
 ## Features
 
+- **First-Time Setup Wizard** - Guided OOBE (Out-Of-Box Experience) for easy initial configuration
+- **Admin Module** - Centralized user management, global settings control, and system information
 - **Modular Plugin Architecture** - Extensible system with drop-in modules
 - **Single and Bulk Job Creation** - Create individual jobs or import multiple jobs from CSV
 - **Quote Management** - Create quotes that can be converted to jobs
@@ -13,6 +15,8 @@ A modular tool for managing blueprint files and customer job directories with su
 - **File Organization** - Automatic folder structure creation and file management
 - **Import Tools** - Direct import of files to blueprint folders
 - **History Tracking** - Keep track of recent jobs and customer information
+- **Network Shared Settings** - Global settings take precedence across all users for team consistency
+- **User Authentication** - Optional user accounts with secure password storage (experimental)
 - **Cross-Platform** - Works on Windows, macOS, and Linux
 
 ## Installation
@@ -53,6 +57,19 @@ python main.py
 
 ### First Time Setup
 
+**Automatic Setup Wizard (Recommended)**
+
+On first launch, JobDocs will automatically present a setup wizard that guides you through:
+1. Directory configuration (blueprints and customer files)
+2. Link type selection (hard link, symbolic link, or copy)
+3. Optional: Network sharing for team collaboration
+4. Optional: User authentication
+
+You can re-run the setup wizard anytime from **Admin → System Info → Run Setup Wizard**.
+
+**Manual Setup**
+
+Alternatively, configure settings manually:
 1. Go to **File → Settings**
 2. Configure your directories:
    - **Blueprints Directory**: Central storage for all blueprint files
@@ -60,6 +77,33 @@ python main.py
    - **ITAR Directories**: Optional separate directories for ITAR-controlled projects
 3. Choose your link type (Hard Link recommended to save disk space)
 4. Set blueprint file extensions (default: .pdf, .dwg, .dxf)
+
+### Network Shared Settings (For Teams)
+
+For teams working on multiple machines, JobDocs supports centralized settings management:
+
+**Setup:**
+1. Run the **Setup Wizard** and enable network sharing (or go to **File → Settings → Advanced Settings**)
+2. Enable **Network Shared Settings**
+3. Configure network paths:
+   - **Shared Settings File**: `\\server\share\jobdocs-settings.json`
+   - **Shared History File**: `\\server\share\jobdocs-history.json`
+4. Click Save and restart
+
+**How It Works:**
+- **Global settings** (directories, link type, extensions) are stored in the network file
+- **Global settings take precedence** over individual user settings
+- Administrators edit the network file → all users get updates instantly
+- **Personal settings** (UI style, default tab) stay local to each user
+- **Network configuration** (paths to network files) stays local to each user
+
+**Benefits:**
+- Centralized control - admins manage team-wide settings
+- Consistency - everyone uses same directories and configurations
+- No misconfiguration - users can't accidentally use wrong paths
+- Easy onboarding - new users point to network file and get correct settings
+
+See [docs/SETTINGS_PRIORITY.md](docs/SETTINGS_PRIORITY.md) for detailed priority explanation.
 
 ### Creating Quotes
 
@@ -131,6 +175,35 @@ The **Search** tab provides powerful search capabilities:
 - Double-click results to open job folders
 - Right-click for context menu (copy path, open location)
 
+### Administration
+
+The **Admin** tab provides centralized management:
+
+#### User Management (Optional)
+- Create and delete user accounts
+- View all users in the system
+- Secure password storage with PBKDF2-HMAC-SHA256
+- **Requirements:** Enable `user_auth` module (rename `_user_auth` to `user_auth`)
+
+#### Global Settings Management
+- View all application settings in table format
+- Edit network-shared settings file directly
+- JSON validation when saving
+- See which settings are shared vs. local
+- **Requirements:** Network sharing must be enabled
+
+#### System Information
+- View application info (module count)
+- Check user authentication status
+- Review network sharing configuration
+- Inspect directory paths and configuration
+- View history statistics
+
+#### Setup Wizard
+- Re-run first-time setup anytime
+- Reconfigure directories, link type, network sharing, and user auth
+- Updates all settings at once
+
 ## File Structure
 
 JobDocs creates the following directory structure:
@@ -164,8 +237,30 @@ Configuration files are stored in platform-specific locations:
 - **Linux**: `~/.local/share/JobDocs`
 
 Files stored:
-- `settings.json` - Application settings
-- `history.json` - Recent jobs and customer history
+- `settings.json` - Application settings (local and network configuration)
+- `history.json` - Recent jobs and customer history (local fallback)
+- `users.json` - User accounts (if user authentication is enabled)
+
+### Network Shared Configuration
+
+When network sharing is enabled:
+- **Global settings** from network file take precedence over local settings
+- **Personal settings** (UI style, default tab) always remain local
+- Shared settings stored at configured network path (e.g., `\\server\share\jobdocs-settings.json`)
+- Shared history stored at configured network path (e.g., `\\server\share\jobdocs-history.json`)
+- Local settings file maintains personal preferences and network paths
+- See [docs/SETTINGS_PRIORITY.md](docs/SETTINGS_PRIORITY.md) for priority details
+
+### Settings Priority
+
+When network sharing is enabled, settings are applied in this order (highest to lowest):
+1. **Personal settings** from local file (ui_style, default_tab)
+2. **Network configuration** from local file (network paths)
+3. **Global settings** from network file ⭐ **TAKES PRECEDENCE**
+4. Non-personal settings from local file (fallback)
+5. Default settings (baseline)
+
+This ensures team-wide consistency while preserving individual preferences.
 
 ## Link Types
 
@@ -197,7 +292,12 @@ JobDocs uses a plugin-based architecture:
 5. **Search** - Advanced job search
 6. **Import Blueprints** - Import blueprints to customer folders
 7. **History** - View recent job history
-8. **Reporting** (Experimental) - Generate and export reports
+8. **Admin** - Administrative controls and system management
+   - **User Management** - Create/delete user accounts (requires user_auth module)
+   - **Global Settings** - View and edit network-shared settings
+   - **System Info** - View application and configuration information
+   - **Setup Wizard** - Re-run first-time setup anytime
+9. **Reporting** (Experimental) - Generate and export reports
 
 ### Creating Custom Modules
 
@@ -220,9 +320,16 @@ JobDocs/
 │   ├── quote/           # Quote module
 │   ├── job/             # Job module
 │   ├── bulk/            # Bulk creation module
+│   ├── admin/           # Admin module
+│   │   ├── module.py    # Admin functionality
+│   │   └── oobe_wizard.py # First-time setup wizard
+│   ├── _user_auth/      # User authentication (experimental, disabled by default)
 │   └── ...
 ├── settings_dialog.py   # Settings UI
 ├── docs/                # Documentation
+│   ├── SETTINGS_PRIORITY.md  # Settings priority explanation
+│   ├── OOBE_IMPROVEMENTS.md  # OOBE wizard improvements
+│   └── ...
 ├── old/                 # Legacy code (archived)
 └── README.md            # This file
 ```

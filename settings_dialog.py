@@ -6,7 +6,6 @@ Provides a UI for configuring application settings including:
 - Link types
 - File extensions
 - Advanced options
-- Experimental features
 """
 
 from typing import Dict, Any
@@ -221,10 +220,56 @@ class SettingsDialog(QDialog):
 
         advanced_content_layout.addWidget(QLabel(""))
 
-        self.experimental_check = QCheckBox("Enable experimental features (Reporting)")
-        self.experimental_check.setChecked(self.settings.get('experimental_features', False))
-        self.experimental_check.setToolTip("Enables experimental features. Requires restart.")
-        advanced_content_layout.addWidget(self.experimental_check)
+        # Network shared settings
+        network_label = QLabel("Network Shared Settings:")
+        network_label.setStyleSheet("font-weight: bold;")
+        advanced_content_layout.addWidget(network_label)
+
+        advanced_content_layout.addWidget(QLabel(
+            "Share global settings and history across multiple users/machines.\n"
+            "Personal settings (theme, visible tabs, start tab) remain local.\n"
+            "Note: Files will be hidden to prevent accidental tampering."
+        ))
+
+        self.enable_network_check = QCheckBox("Enable network shared settings")
+        self.enable_network_check.setChecked(self.settings.get('network_shared_enabled', False))
+        self.enable_network_check.toggled.connect(self.toggle_network_fields)
+        advanced_content_layout.addWidget(self.enable_network_check)
+
+        network_paths_layout = QGridLayout()
+
+        network_paths_layout.addWidget(QLabel("Shared Settings File:"), 0, 0)
+        self.network_settings_edit = QLineEdit(self.settings.get('network_settings_path', ''))
+        self.network_settings_edit.setPlaceholderText(r"\\server\share\jobdocs\shared_settings.json")
+        network_paths_layout.addWidget(self.network_settings_edit, 0, 1)
+        network_settings_btn = QPushButton("Browse...")
+        network_settings_btn.clicked.connect(lambda: self.browse_file(
+            self.network_settings_edit,
+            "JSON Files (*.json)",
+            "jobdocs-settings.json"
+        ))
+        network_paths_layout.addWidget(network_settings_btn, 0, 2)
+
+        network_paths_layout.addWidget(QLabel("Shared History File:"), 1, 0)
+        self.network_history_edit = QLineEdit(self.settings.get('network_history_path', ''))
+        self.network_history_edit.setPlaceholderText(r"\\server\share\jobdocs\shared_history.json")
+        network_paths_layout.addWidget(self.network_history_edit, 1, 1)
+        network_history_btn = QPushButton("Browse...")
+        network_history_btn.clicked.connect(lambda: self.browse_file(
+            self.network_history_edit,
+            "JSON Files (*.json)",
+            "jobdocs-history.json"
+        ))
+        network_paths_layout.addWidget(network_history_btn, 1, 2)
+
+        advanced_content_layout.addLayout(network_paths_layout)
+
+        # Store widgets for toggling
+        self.network_widgets = [
+            self.network_settings_edit, network_settings_btn,
+            self.network_history_edit, network_history_btn
+        ]
+        self.toggle_network_fields(self.enable_network_check.isChecked())
 
         advanced_layout.addWidget(self.advanced_content)
 
@@ -250,6 +295,44 @@ class SettingsDialog(QDialog):
         if dir_path:
             line_edit.setText(dir_path)
 
+    def browse_file(self, line_edit: QLineEdit, file_filter: str, default_filename: str = ""):
+        """
+        Browse for a file with optional default filename.
+
+        Args:
+            line_edit: The line edit to populate with the selected path
+            file_filter: File filter for the dialog (e.g., "JSON Files (*.json)")
+            default_filename: Default filename to suggest (e.g., "jobdocs-settings.json")
+        """
+        # Get current value from line edit or use default filename
+        current_value = line_edit.text().strip()
+
+        # If there's a current value, use it as initial path
+        # Otherwise, suggest the default filename
+        if current_value:
+            initial_path = current_value
+        elif default_filename:
+            initial_path = default_filename
+        else:
+            initial_path = ""
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Select File Location",
+            initial_path,
+            file_filter
+        )
+        if file_path:
+            # Ensure .json extension for JSON files
+            if "JSON" in file_filter and not file_path.endswith('.json'):
+                file_path += '.json'
+            line_edit.setText(file_path)
+
+    def toggle_network_fields(self, enabled: bool):
+        """Enable/disable network path fields based on checkbox"""
+        for widget in self.network_widgets:
+            widget.setEnabled(enabled)
+
     def save(self):
         self.settings['blueprints_dir'] = self.blueprints_edit.text()
         self.settings['customer_files_dir'] = self.customer_files_edit.text()
@@ -273,6 +356,10 @@ class SettingsDialog(QDialog):
         self.settings['allow_duplicate_jobs'] = self.allow_duplicates_check.isChecked()
         self.settings['ui_style'] = self.style_combo.currentText()
         self.settings['default_tab'] = self.default_tab_combo.currentIndex()
-        self.settings['experimental_features'] = self.experimental_check.isChecked()
+
+        # Network shared settings
+        self.settings['network_shared_enabled'] = self.enable_network_check.isChecked()
+        self.settings['network_settings_path'] = self.network_settings_edit.text().strip()
+        self.settings['network_history_path'] = self.network_history_edit.text().strip()
 
         self.accept()

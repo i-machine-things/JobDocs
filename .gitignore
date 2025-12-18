@@ -6,6 +6,7 @@ test_jobs.csv
 
 # Claude Code and development notes
 .claude/
+.claude_context.md
 .github-push-checklist.md
 docs/
 
@@ -64,3 +65,4 @@ JobDocs-Setup-*.exe
 JobDocs-Windows/
 ignore.me.md
 sample file structure
+.claude_context.md

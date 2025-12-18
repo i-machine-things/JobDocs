@@ -7,6 +7,7 @@ Main application entry point using the modular plugin architecture.
 
 import sys
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List
@@ -17,7 +18,7 @@ from PyQt6.QtCore import Qt
 
 from core.module_loader import ModuleLoader
 from core.app_context import AppContext
-from shared.utils import get_config_dir, get_os_text
+from shared.utils import get_config_dir, get_os_text, get_os_type
 
 
 class JobDocsMainWindow(QMainWindow):
@@ -36,13 +37,23 @@ class JobDocsMainWindow(QMainWindow):
         'quote_folder_path': 'Quotes',
         'legacy_mode': True,
         'default_tab': 0,
-        'experimental_features': False,
         'db_type': 'mssql',
         'db_host': 'localhost',
         'db_port': 1433,
         'db_name': '',
         'db_username': '',
-        'db_password': ''
+        'db_password': '',
+        'network_shared_enabled': False,
+        'network_settings_path': '',
+        'network_history_path': '',
+        'user_auth_enabled': False,
+        'oobe_completed': False
+    }
+
+    # Personal settings that should never be shared across network
+    PERSONAL_SETTINGS = {
+        'ui_style',
+        'default_tab'
     }
 
     def __init__(self):
@@ -52,10 +63,27 @@ class JobDocsMainWindow(QMainWindow):
         self.config_dir = get_config_dir()
         self.settings_file = self.config_dir / 'settings.json'
         self.history_file = self.config_dir / 'history.json'
+        self.users_file = self.config_dir / 'users.json'
 
         self.settings = self.load_settings()
         self.history = self.load_history()
         self.modules = []  # Store loaded modules
+        self.current_user = None  # Current logged-in user
+
+        # Initialize user authentication (requires user_auth module)
+        self.user_auth = None
+        if self.settings.get('user_auth_enabled', False):
+            try:
+                from modules.user_auth.user_auth import UserAuth
+                self.user_auth = UserAuth(self.users_file)
+
+                # Show login dialog
+                if not self._login():
+                    # User cancelled login or failed to authenticate
+                    sys.exit(0)
+            except ImportError:
+                # Module not enabled (still has underscore prefix)
+                pass
 
         # Setup UI
         self.setWindowTitle("JobDocs")
@@ -96,46 +124,255 @@ class JobDocsMainWindow(QMainWindow):
 
         self.statusBar().showMessage("Ready")
 
+        # Check for first-time setup
+        if not self.settings.get('oobe_completed', False):
+            self._run_first_time_setup()
+
+    # ==================== First-Time Setup ====================
+
+    def _run_first_time_setup(self):
+        """Run the first-time setup wizard (OOBE)"""
+        try:
+            from modules.admin.oobe_wizard import OOBEWizard
+            from PyQt6.QtCore import QTimer
+
+            # Show wizard after main window is displayed
+            def show_wizard():
+                wizard = OOBEWizard(self.app_context, parent=self)
+                if wizard.exec():
+                    QMessageBox.information(
+                        self,
+                        "Setup Complete",
+                        "JobDocs has been configured.\n\n"
+                        "You may need to restart the application for all changes to take effect."
+                    )
+                else:
+                    # User cancelled - ask if they want to continue anyway
+                    reply = QMessageBox.question(
+                        self,
+                        "Setup Cancelled",
+                        "Setup was cancelled. You can run it later from the Admin tab.\n\n"
+                        "Do you want to continue without setup?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    if reply == QMessageBox.StandardButton.No:
+                        self.close()
+
+            # Show wizard after a short delay to ensure window is visible
+            QTimer.singleShot(500, show_wizard)
+
+        except ImportError:
+            # Admin module not available, skip OOBE
+            print("Admin module not available, skipping first-time setup")
+            # Mark as completed so we don't keep trying
+            self.settings['oobe_completed'] = True
+            self.save_settings()
+
+    # ==================== User Authentication ====================
+
+    def _login(self) -> bool:
+        """Show login dialog and authenticate user"""
+        from modules.user_auth.ui.login_dialog import LoginDialog
+
+        dialog = LoginDialog(self.user_auth, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.current_user = dialog.get_authenticated_user()
+            self.setWindowTitle(f"JobDocs - {self.current_user}")
+            return True
+        return False
+
     # ==================== Settings & History ====================
 
+    def _make_file_hidden(self, file_path: Path):
+        """Make a file hidden (cross-platform)"""
+        try:
+            if get_os_type() == "windows":
+                # Windows: Set hidden attribute
+                import ctypes
+                ctypes.windll.kernel32.SetFileAttributesW(str(file_path), 2)
+            else:
+                # Linux/macOS: Rename to start with dot if not already
+                if not file_path.name.startswith('.'):
+                    parent = file_path.parent
+                    new_path = parent / f".{file_path.name}"
+                    if not new_path.exists():
+                        file_path.rename(new_path)
+                        return new_path
+            return file_path
+        except Exception as e:
+            print(f"Warning: Could not make file hidden: {e}")
+            return file_path
+
     def load_settings(self) -> Dict[str, Any]:
-        """Load settings from file"""
+        """
+        Load settings from file, merging network and local settings.
+
+        Priority order (highest to lowest):
+        1. Personal settings from local file (ui_style, default_tab)
+        2. Network configuration from local file (network_shared_enabled, paths)
+        3. Global settings from network file (takes precedence over local)
+        4. Non-personal settings from local file
+        5. Default settings
+        """
+        # Start with defaults
+        merged = self.DEFAULT_SETTINGS.copy()
+
+        # Load local settings file
+        local_settings = {}
         if self.settings_file.exists():
             try:
                 with open(self.settings_file, 'r') as f:
-                    settings = json.load(f)
-                    merged = self.DEFAULT_SETTINGS.copy()
-                    merged.update(settings)
-                    return merged
+                    local_settings = json.load(f)
             except (json.JSONDecodeError, IOError) as e:
-                print(f"Warning: Could not load settings: {e}")
-        return self.DEFAULT_SETTINGS.copy()
+                print(f"Warning: Could not load local settings: {e}")
+
+        # First, merge all local settings (as fallback/base)
+        merged.update(local_settings)
+
+        # Check if network sharing is enabled
+        network_enabled = local_settings.get('network_shared_enabled', False)
+        network_settings_path = local_settings.get('network_settings_path', '')
+
+        # Network config keys that should always come from local
+        network_config_keys = {'network_shared_enabled', 'network_settings_path', 'network_history_path'}
+
+        if network_enabled and network_settings_path:
+            # Try to load network shared settings
+            try:
+                network_path = Path(network_settings_path)
+                if network_path.exists():
+                    with open(network_path, 'r') as f:
+                        network_settings = json.load(f)
+
+                        # Network settings take precedence over local (except personal settings)
+                        for key, value in network_settings.items():
+                            # Skip personal settings and network config - keep local values
+                            if key not in self.PERSONAL_SETTINGS and key not in network_config_keys:
+                                merged[key] = value
+
+                        print(f"Loaded network shared settings from: {network_settings_path}")
+                        print(f"  Global settings take precedence over local settings")
+                else:
+                    print(f"Warning: Network settings file not found: {network_settings_path}")
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Could not load network settings: {e}")
+                print("Falling back to local settings only")
+
+        # Ensure personal settings and network config always use local values
+        # (overlay them on top of network settings)
+        for key in self.PERSONAL_SETTINGS | network_config_keys:
+            if key in local_settings:
+                merged[key] = local_settings[key]
+
+        return merged
 
     def save_settings(self):
-        """Save settings to file"""
+        """Save settings to file, handling network shared settings"""
         try:
+            # Always save local settings file (includes personal settings and network config)
             with open(self.settings_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
+
+            # If network sharing is enabled, also save shared settings
+            network_enabled = self.settings.get('network_shared_enabled', False)
+            network_settings_path = self.settings.get('network_settings_path', '')
+
+            if network_enabled and network_settings_path:
+                try:
+                    # Prepare shared settings (exclude personal settings and network config)
+                    shared_settings = {
+                        k: v for k, v in self.settings.items()
+                        if k not in self.PERSONAL_SETTINGS
+                        and k not in {'network_shared_enabled', 'network_settings_path', 'network_history_path'}
+                    }
+
+                    network_path = Path(network_settings_path)
+                    # Create parent directory if it doesn't exist
+                    network_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    with open(network_path, 'w') as f:
+                        json.dump(shared_settings, f, indent=2)
+
+                    # Make the file hidden to prevent tampering
+                    self._make_file_hidden(network_path)
+
+                    print(f"Saved network shared settings to: {network_settings_path}")
+                except IOError as e:
+                    print(f"Warning: Could not save network settings: {e}")
+                    self.show_error_dialog(
+                        "Network Settings Error",
+                        f"Failed to save network shared settings:\n{e}\n\nLocal settings were saved successfully."
+                    )
+
         except IOError as e:
             self.show_error_dialog("Error", f"Failed to save settings: {e}")
 
     def load_history(self) -> Dict[str, Any]:
-        """Load history from file"""
+        """Load history from file, checking network shared history first"""
+        default_history = {'customers': {}, 'recent_jobs': []}
+
+        # Check if network sharing is enabled
+        network_enabled = self.settings.get('network_shared_enabled', False)
+        network_history_path = self.settings.get('network_history_path', '')
+
+        if network_enabled and network_history_path:
+            # Try to load network shared history
+            try:
+                network_path = Path(network_history_path)
+                if network_path.exists():
+                    with open(network_path, 'r') as f:
+                        history = json.load(f)
+                        print(f"Loaded network shared history from: {network_history_path}")
+                        return history
+                else:
+                    print(f"Warning: Network history file not found: {network_history_path}")
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Could not load network history: {e}")
+                print("Falling back to local history")
+
+        # Fall back to local history
         if self.history_file.exists():
             try:
                 with open(self.history_file, 'r') as f:
                     return json.load(f)
             except (json.JSONDecodeError, IOError) as e:
-                print(f"Warning: Could not load history: {e}")
-        return {'customers': {}, 'recent_jobs': []}
+                print(f"Warning: Could not load local history: {e}")
+
+        return default_history
 
     def save_history(self):
-        """Save history to file"""
-        try:
-            with open(self.history_file, 'w') as f:
-                json.dump(self.history, f, indent=2)
-        except IOError as e:
-            self.show_error_dialog("Error", f"Failed to save history: {e}")
+        """Save history to file, handling network shared history"""
+        # Check if network sharing is enabled
+        network_enabled = self.settings.get('network_shared_enabled', False)
+        network_history_path = self.settings.get('network_history_path', '')
+
+        if network_enabled and network_history_path:
+            # Save to network shared location
+            try:
+                network_path = Path(network_history_path)
+                # Create parent directory if it doesn't exist
+                network_path.parent.mkdir(parents=True, exist_ok=True)
+
+                with open(network_path, 'w') as f:
+                    json.dump(self.history, f, indent=2)
+
+                # Make the file hidden to prevent tampering
+                self._make_file_hidden(network_path)
+
+                print(f"Saved network shared history to: {network_history_path}")
+            except IOError as e:
+                print(f"Warning: Could not save network history: {e}")
+                self.show_error_dialog(
+                    "Network History Error",
+                    f"Failed to save network shared history:\n{e}\n\nHistory was not saved."
+                )
+        else:
+            # Save to local file
+            try:
+                with open(self.history_file, 'w') as f:
+                    json.dump(self.history, f, indent=2)
+            except IOError as e:
+                self.show_error_dialog("Error", f"Failed to save history: {e}")
 
     # ==================== Module Loading ====================
 
@@ -145,9 +382,8 @@ class JobDocsMainWindow(QMainWindow):
         loader = ModuleLoader(modules_dir)
 
         try:
-            # Load modules with experimental flag
-            experimental_enabled = self.settings.get('experimental_features', False)
-            self.modules = loader.load_all_modules(self.app_context, experimental_enabled)
+            # Load all modules (experimental modules controlled by underscore prefix)
+            self.modules = loader.load_all_modules(self.app_context, experimental_enabled=True)
 
             if not self.modules:
                 QMessageBox.warning(
