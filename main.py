@@ -33,10 +33,11 @@ class JobDocsMainWindow(QMainWindow):
         'blueprint_extensions': ['.pdf', '.dwg', '.dxf'],
         'allow_duplicate_jobs': False,
         'ui_style': 'Fusion',
-        'job_folder_structure': '{customer}/{job_folder}/job documents',
+        'job_folder_structure': '{customer}/job documents/{job_folder}',
         'quote_folder_path': 'Quotes',
         'legacy_mode': True,
         'default_tab': 0,
+        'disabled_modules': [],  # List of disabled module names
         'db_type': 'mssql',
         'db_host': 'localhost',
         'db_port': 1433,
@@ -87,7 +88,7 @@ class JobDocsMainWindow(QMainWindow):
 
         # Setup UI
         self.setWindowTitle("JobDocs")
-        self.resize(1200, 800)
+        self.resize(700, 600)
 
         # Create tab widget
         self.tabs = QTabWidget()
@@ -452,7 +453,25 @@ class JobDocsMainWindow(QMainWindow):
         # Import here to avoid circular dependency
         from settings_dialog import SettingsDialog
 
-        dialog = SettingsDialog(self.settings, self)
+        # Discover all available modules for the settings dialog
+        modules_dir = Path(__file__).parent / 'modules'
+        loader = ModuleLoader(modules_dir)
+        available_module_names = loader.discover_modules()
+
+        # Create list of (module_name, display_name) tuples
+        available_modules = []
+        for module_name in available_module_names:
+            try:
+                # Try to load the module class to get its display name
+                module_class = loader.load_module(module_name)
+                instance = module_class()
+                display_name = instance.get_name()
+                available_modules.append((module_name, display_name))
+            except Exception:
+                # If we can't load it, just use the module name
+                available_modules.append((module_name, module_name))
+
+        dialog = SettingsDialog(self.settings, self, available_modules)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.settings = dialog.settings
             self.save_settings()
@@ -620,12 +639,41 @@ Search across all customers and jobs.</p>
             self.log_message(f"Error creating job {job_number}: {e}")
             return False
 
+    # ==================== Application Cleanup ====================
+
+    def closeEvent(self, event):
+        """Handle window close event - ensure proper cleanup"""
+        self.log_message("Application closing - cleaning up resources...")
+
+        # Cleanup all modules
+        for module in self.modules:
+            try:
+                module.cleanup()
+            except Exception as e:
+                print(f"Error cleaning up module {module.get_name()}: {e}")
+
+        # Save any pending settings/history
+        try:
+            self.save_settings()
+            self.save_history()
+        except Exception as e:
+            print(f"Error saving on exit: {e}")
+
+        # Accept the close event
+        event.accept()
+
+        # Ensure application quits
+        QApplication.quit()
+
 
 def main():
     """Main application entry point"""
     app = QApplication(sys.argv)
     app.setApplicationName("JobDocs")
     app.setOrganizationName("JobDocs")
+
+    # Ensure clean shutdown
+    app.setQuitOnLastWindowClosed(True)
 
     print("=" * 60)
     print("JobDocs - Modular Plugin System")
@@ -635,7 +683,16 @@ def main():
     window = JobDocsMainWindow()
     window.show()
 
-    return app.exec()
+    # Run the application
+    exit_code = app.exec()
+
+    # Ensure window is properly deleted
+    window.deleteLater()
+
+    # Process any remaining events
+    app.processEvents()
+
+    return exit_code
 
 
 if __name__ == '__main__':
