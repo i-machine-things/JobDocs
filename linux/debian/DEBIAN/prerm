@@ -1,6 +1,0 @@
-#!/bin/bash
-# Pre-removal script for JobDocs
-
-set -e
-
-exit 0

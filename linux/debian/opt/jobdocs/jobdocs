@@ -1,8 +1,0 @@
-#!/bin/bash
-# JobDocs launcher script
-
-# Change to the application directory
-cd /opt/jobdocs
-
-# Launch the application
-exec python3 main.py "$@"
