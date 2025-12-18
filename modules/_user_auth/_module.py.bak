@@ -1,0 +1,22 @@
+"""
+User Authentication Module for JobDocs
+
+Provides secure user authentication system with password hashing.
+This is a BACKEND module - it does NOT create a visible tab.
+
+This module provides:
+- Login dialog at application startup
+- Password authentication with PBKDF2-HMAC-SHA256 hashing
+- User session management
+
+User account management is handled by the Admin module.
+
+To enable:
+1. Ensure this directory is named 'user_auth' (no underscore)
+2. Enable 'user_auth_enabled' in settings (via OOBE wizard or admin module)
+3. Restart JobDocs
+"""
+
+# This is a backend module - no UI tab
+# User authentication is handled in main.py
+# User management is handled in the admin module

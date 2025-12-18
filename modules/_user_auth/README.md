@@ -1,6 +1,13 @@
 # User Authentication Module (Experimental)
 
+**⚠️ BACKEND MODULE - NOT A VISIBLE TAB**
+
 This module provides secure user authentication for JobDocs using industry-standard password hashing.
+
+**Important**: This module does NOT create a tab in the UI. It provides:
+- Login dialog at application startup
+- Backend authentication services
+- User account management is done through the **Admin module**
 
 ## Security Features
 
@@ -33,10 +40,10 @@ When you enable user authentication and restart JobDocs:
 
 ### User Management
 
-Access via the **User Management** module tab:
-- **Create New User**: Add additional users to the system
-- **Delete User**: Remove users (cannot delete yourself)
-- **Change My Password**: Update your own password
+**Note**: User management is done through the **Admin module** (Settings & Setup tab):
+- **Create New User**: Add additional users to the system (Admin only)
+- **Delete User**: Remove users (Admin only, cannot delete yourself)
+- **Change My Password**: Coming soon (or use Admin module to delete/recreate)
 
 ### Login System
 
@@ -85,14 +92,17 @@ When combined with network shared settings, each user logs in with their own cre
 ```
 modules/user_auth/
 ├── __init__.py              # Module package marker
-├── module.py                # JobDocs module integration
+├── _module.py.bak           # Backup (NOT loaded - this is not a tab module)
 ├── user_auth.py             # Authentication backend
 ├── ui/
 │   ├── __init__.py
 │   ├── login_dialog.py      # Login UI
-│   └── user_management_dialog.py  # User management UI
+│   └── user_management_dialog.py  # User management UI (used by Admin module)
 └── README.md                # This file
 ```
+
+**Important**: There is NO `module.py` file because this is a backend module, not a tab module.
+The module loader skips directories without `module.py`, which is exactly what we want.
 
 ### Authentication Flow
 
