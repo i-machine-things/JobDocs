@@ -65,6 +65,80 @@ modules/_admin/
 └── ...
 ```
 
+## Network-Shared User Accounts (Multi-Machine Support)
+
+JobDocs supports sharing user accounts across multiple machines via a network-shared users file. This allows an admin on one machine to create user accounts that work on all machines in the team.
+
+### How It Works
+
+1. **Admin Machine**: Creates and manages users via Admin tab
+2. **Users File**: Stored on network share (e.g., `\\server\shared\jobdocs-users.json`)
+3. **User Machines**: Point to the network users file, use centralized accounts
+
+### Configuration
+
+**Via OOBE Wizard** (Recommended for users):
+1. Run OOBE wizard on user machine
+2. Go to "User Authentication" page
+3. Click "🔍 Auto-Search for Shared Users File"
+4. Wizard automatically finds and selects the network users file
+5. Finish setup - user can now log in with admin-created accounts
+
+**Manual Configuration**:
+1. Edit `settings.json`
+2. Set `"network_users_path": "\\\\server\\shared\\jobdocs-users.json"`
+3. Restart JobDocs
+4. Login with credentials created by admin
+
+### Network File Location
+
+The auto-search feature looks for users files in:
+- Same directory as `network_settings_path`
+- Same directory as `network_history_path`
+- Parent directory of `customer_files_dir`
+- Common mapped drives (Windows: G:, H:, etc.)
+
+### Admin Workflow (Multi-Machine Team)
+
+1. **Admin sets up first machine**:
+   - Enable admin module: `mv modules/_admin modules/admin`
+   - Run OOBE wizard, configure directories
+   - Enable user authentication
+   - Specify network users file path: `\\server\shared\jobdocs-users.json`
+   - Create user accounts via Admin tab → Users
+
+2. **Admin distributes settings**:
+   - Share network paths with team:
+     - Settings: `\\server\shared\jobdocs-settings.json`
+     - History: `\\server\shared\jobdocs-history.json`
+     - Users: `\\server\shared\jobdocs-users.json`
+
+3. **Users set up their machines**:
+   - Install user build (admin module disabled: `_admin`)
+   - Run OOBE wizard
+   - Enable network sharing (enter network settings/history paths)
+   - Enable user authentication
+   - Click "Auto-Search" to find network users file
+   - Finish wizard, restart, log in with credentials
+
+### Benefits
+
+✓ **Centralized user management**: Admin creates users once, works everywhere
+✓ **Automatic discovery**: Users can auto-find the shared users file
+✓ **No manual copying**: No need to distribute users.json to each machine
+✓ **Password changes sync**: Password changes by admin apply immediately
+✓ **Offline fallback**: Local users file used if network unavailable
+
+### Fallback Behavior
+
+When `network_users_path` is configured:
+
+1. **First Try**: Load from network file (preferred)
+2. **Fallback**: Load from local file if network unavailable
+3. **Saves**: Always save to network file when using network users
+
+This ensures users can still log in if the network is temporarily unavailable (using cached local copy).
+
 ## Configuration Scenarios
 
 ### Scenario 1: No Authentication (Default)
@@ -236,19 +310,62 @@ mv modules/_admin modules/admin
 - User build has `_admin` (disabled) by design
 - This is the intended behavior for user builds
 
+## User Roles and Access Control
+
+JobDocs implements role-based access control (RBAC) with two user roles:
+
+### Admin Users
+- **Can access**: All modules + Admin menu
+- **Admin menu includes**:
+  - Admin Panel (full Settings & Setup)
+  - User Management (create/delete users, set roles)
+- **Auto-assigned**: First user created is always admin
+- **Display**: Window title shows "(Admin)" indicator
+
+### Regular Users
+- **Can access**: All regular modules (Create Job, Search, History, etc.)
+- **Cannot access**: Admin Panel, User Management
+- **No admin menu**: Admin menu hidden entirely
+- **Display**: Window title shows username only
+
+### How It Works
+
+When a user logs in:
+1. System checks `is_admin` flag in user record
+2. Loads appropriate modules:
+   - Admins: All modules (admin accessed via menu, not tabs)
+   - Users: Regular modules only (admin module excluded)
+3. Shows/hides Admin menu based on role
+
+### Setting User Roles
+
+**First User** (Automatic):
+- First user created is automatically an admin
+- Happens on first run or when no users exist
+
+**Additional Users** (Via User Management):
+- Admin logs in → Admin → User Management
+- Create new user → Check "Admin privileges" if needed
+- Or edit existing user to promote/demote
+
+**Via Network Users File**:
+- Admin edits network users.json directly
+- Set `"is_admin": true` or `false` for any user
+- Changes apply immediately on next login
+
 ## Summary
 
-**user_auth** = Login system (backend, no tab)
-**Admin** = Configuration + User management (tab, disabled by default)
+**user_auth** = Login system (backend, no tab) + Role management
+**Admin module** = Configuration + User management (accessible via Admin menu for admins only)
 
 Together they provide:
-- Secure login
-- User account management
-- Build separation (user vs admin)
+- Secure login with role-based access
+- User account and permission management
+- Clean UI (admin features hidden from regular users)
 - Prevents accidental configuration damage
 
-Separately they can be:
-- user_auth only: Login without management (requires admin build for setup)
-- Admin only: Configuration without authentication
-- Both disabled: Open access, simplest setup
-- Both enabled: Full control (admin build)
+Role-based separation:
+- Admins: Full access (all modules + Admin menu)
+- Users: Regular modules only (no Admin menu)
+- First user: Always admin
+- Network sync: Roles stored in shared users file

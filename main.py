@@ -38,6 +38,7 @@ class JobDocsMainWindow(QMainWindow):
         'legacy_mode': True,
         'default_tab': 0,
         'disabled_modules': [],  # List of disabled module names
+        'network_users_path': '',  # Path to shared users.json on network
         'db_type': 'mssql',
         'db_host': 'localhost',
         'db_port': 1433,
@@ -70,13 +71,19 @@ class JobDocsMainWindow(QMainWindow):
         self.history = self.load_history()
         self.modules = []  # Store loaded modules
         self.current_user = None  # Current logged-in user
+        self.user_is_admin = False  # Whether current user is admin
 
         # Initialize user authentication (requires user_auth module)
         self.user_auth = None
         if self.settings.get('user_auth_enabled', False):
             try:
                 from modules.user_auth.user_auth import UserAuth
-                self.user_auth = UserAuth(self.users_file)
+
+                # Get network users path if configured
+                network_users_path = self.settings.get('network_users_path', '')
+                network_users_file = Path(network_users_path) if network_users_path else None
+
+                self.user_auth = UserAuth(self.users_file, network_users_file)
 
                 # Show login dialog
                 if not self._login():
@@ -175,10 +182,41 @@ class JobDocsMainWindow(QMainWindow):
         """Show login dialog and authenticate user"""
         from modules.user_auth.ui.login_dialog import LoginDialog
 
+        # Check if there are any users
+        if not self.user_auth.list_users():
+            # No users exist - create first admin user
+            QMessageBox.information(
+                self,
+                "Welcome!",
+                "No user accounts exist yet.\n\nLet's create your first admin user account."
+            )
+
+            from PyQt6.QtWidgets import QInputDialog, QLineEdit
+            username, ok = QInputDialog.getText(self, "Create First Admin User", "Username:")
+            if not ok or not username:
+                return False
+
+            password, ok = QInputDialog.getText(self, "Create First Admin User", "Password:", QLineEdit.EchoMode.Password)
+            if not ok or not password:
+                return False
+
+            try:
+                # First user is always an admin
+                self.user_auth.create_user(username, password, is_admin=True)
+                QMessageBox.information(self, "Success", f"Admin user '{username}' created successfully!")
+            except ValueError as e:
+                QMessageBox.critical(self, "Error", str(e))
+                return False
+
         dialog = LoginDialog(self.user_auth, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.current_user = dialog.get_authenticated_user()
-            self.setWindowTitle(f"JobDocs - {self.current_user}")
+            self.user_is_admin = self.user_auth.is_admin(self.current_user)
+
+            # Update window title with role indicator
+            role_text = " (Admin)" if self.user_is_admin else ""
+            self.setWindowTitle(f"JobDocs - {self.current_user}{role_text}")
+
             return True
         return False
 
@@ -384,9 +422,9 @@ class JobDocsMainWindow(QMainWindow):
 
         try:
             # Load all modules (experimental modules controlled by underscore prefix)
-            self.modules = loader.load_all_modules(self.app_context, experimental_enabled=True)
+            all_modules = loader.load_all_modules(self.app_context, experimental_enabled=True)
 
-            if not self.modules:
+            if not all_modules:
                 QMessageBox.warning(
                     self,
                     "No Modules",
@@ -394,7 +432,24 @@ class JobDocsMainWindow(QMainWindow):
                 )
                 return
 
-            # Add each module as a tab
+            # Filter modules based on user role
+            self.modules = []
+            self.admin_module = None
+
+            for module in all_modules:
+                module_name = module.get_name()
+
+                # Check if this is the admin module
+                if module_name in ["Settings & Setup", "Admin", "Administration"]:
+                    # Store admin module separately (will be added to menu, not tabs)
+                    self.admin_module = module
+                    self.log_message(f"Found admin module: {module_name}")
+                    continue
+
+                # Add regular modules to tabs
+                self.modules.append(module)
+
+            # Add regular modules as tabs
             for module in self.modules:
                 try:
                     widget = module.get_widget()
@@ -436,6 +491,18 @@ class JobDocsMainWindow(QMainWindow):
 
         exit_action = file_menu.addAction("E&xit")
         exit_action.triggered.connect(self.close)
+
+        # Admin menu (only visible for admin users)
+        if self.user_is_admin and self.admin_module:
+            admin_menu = menubar.addMenu("&Admin")
+
+            admin_panel_action = admin_menu.addAction("&Admin Panel")
+            admin_panel_action.triggered.connect(self.open_admin_panel)
+
+            admin_menu.addSeparator()
+
+            user_management_action = admin_menu.addAction("&User Management")
+            user_management_action.triggered.connect(self.open_user_management)
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -508,6 +575,36 @@ Search across all customers and jobs.</p>
         msg.setTextFormat(Qt.TextFormat.RichText)
         msg.setText(content)
         msg.exec()
+
+    def open_admin_panel(self):
+        """Open the admin panel in a dialog"""
+        if not self.admin_module:
+            QMessageBox.warning(self, "Admin Panel", "Admin module not available")
+            return
+
+        # Create a dialog to host the admin widget
+        from PyQt6.QtWidgets import QVBoxLayout
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Admin Panel")
+        dialog.setMinimumSize(800, 600)
+
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(self.admin_module.get_widget())
+
+        dialog.exec()
+
+    def open_user_management(self):
+        """Open user management dialog"""
+        if not self.user_auth:
+            QMessageBox.warning(self, "User Management", "User authentication not enabled")
+            return
+
+        try:
+            from modules.user_auth.ui.user_management_dialog import UserManagementDialog
+            dialog = UserManagementDialog(self.user_auth, self.current_user, self)
+            dialog.exec()
+        except ImportError:
+            QMessageBox.warning(self, "User Management", "User management module not available")
 
     def show_about(self):
         """Show about dialog"""
