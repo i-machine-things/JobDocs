@@ -301,7 +301,7 @@ JobDocs uses a plugin-based architecture:
 
 ### Creating Custom Modules
 
-See [MODULAR_SYSTEM.md](MODULAR_SYSTEM.md) for details on creating custom modules.
+See [MODULAR_SYSTEM.md](docs/MODULAR_SYSTEM.md) for details on creating custom modules.
 
 ## Development
 
@@ -336,11 +336,11 @@ JobDocs/
 
 ### Building
 
-See [BUILD.md](BUILD.md) for instructions on creating standalone executables.
+See [BUILD.md](docs/BUILD.md) for instructions on creating standalone executables.
 
 ### Testing
 
-See [TESTING.md](TESTING.md) for testing instructions.
+See [TESTING.md](docs/TESTING.md) for testing instructions.
 
 ## License
 

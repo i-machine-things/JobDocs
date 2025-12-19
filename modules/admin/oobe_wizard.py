@@ -981,18 +981,54 @@ class OOBEWizard(QDialog):
             if hasattr(self, 'enable_user_auth_check'):
                 self.enable_user_auth_check.setChecked(True)
 
-            # Show success message
+            # Apply all recommended settings directly to self.settings
+            # Directory paths
+            self.settings['blueprints_dir'] = str(blueprints_path)
+            self.settings['customer_files_dir'] = str(customer_files_path)
+            self.settings['itar_blueprints_dir'] = ''  # ITAR optional
+            self.settings['itar_customer_files_dir'] = ''  # ITAR optional
+
+            # File handling defaults
+            self.settings['link_type'] = 'hard'  # Recommended for reliability
+            self.settings['blueprint_extensions'] = ['.pdf', '.dwg', '.dxf']
+            self.settings['allow_duplicate_jobs'] = False
+
+            # Folder structure defaults
+            self.settings['job_folder_structure'] = '{customer}/job documents/{job_folder}'
+            self.settings['quote_folder_path'] = 'Quotes'
+            self.settings['legacy_mode'] = True
+
+            # Network sharing (enabled for team use)
+            self.settings['network_shared_enabled'] = True
+            self.settings['network_settings_path'] = str(network_settings_path)
+            self.settings['network_history_path'] = str(network_history_path)
+
+            # User authentication (enabled for team use)
+            self.settings['user_auth_enabled'] = True
+            self.settings['network_users_path'] = str(network_users_path)
+
+            # Mark OOBE as completed
+            self.settings['oobe_completed'] = True
+
+            # Save all settings immediately
+            self.app_context.settings.update(self.settings)
+            self.app_context.save_settings()
+
+            # Show success message and close wizard
             QMessageBox.information(
                 self,
-                "Success",
-                f"✓ Auto-setup complete!\n\n"
+                "Auto-Setup Complete!",
+                f"✓ JobDocs has been configured for team use!\n\n"
                 f"📐 Blueprints: {blueprints_path}\n"
                 f"👥 Customer Files: {customer_files_path}\n"
                 f"🔧 Network Settings: {network_folder}\n"
                 f"👤 Admin User: {username}\n\n"
-                f"Team sharing and user accounts are now enabled.\n"
-                f"Click 'Finish' to complete setup."
+                f"Configuration saved. JobDocs will now restart.\n"
+                f"Log in with your admin credentials to get started."
             )
+
+            # Accept the wizard (close and mark as completed)
+            self.accept()
 
         except Exception as e:
             QMessageBox.critical(
