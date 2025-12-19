@@ -66,3 +66,6 @@ JobDocs-Windows/
 ignore.me.md
 sample file structure
 .claude_context.md
+RELEASE_NOTES.md
+.gitignore
+create_release.sh
