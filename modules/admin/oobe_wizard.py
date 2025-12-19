@@ -176,6 +176,34 @@ class OOBEWizard(QDialog):
         intro.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(intro)
 
+        # Auto-setup option
+        auto_setup_box = QGroupBox("🚀 Quick Setup")
+        auto_setup_layout = QVBoxLayout(auto_setup_box)
+        auto_setup_box.setStyleSheet("QGroupBox { border: 2px solid #28a745; border-radius: 8px; padding: 10px; }")
+
+        auto_desc = QLabel(
+            "New to JobDocs? Select a root folder on your server and we'll automatically create "
+            "standard subdirectories:\n"
+            "  • blueprints/\n"
+            "  • customer files/"
+        )
+        auto_desc.setWordWrap(True)
+        auto_desc.setStyleSheet("color: #444; font-size: 12px; margin-bottom: 10px;")
+        auto_setup_layout.addWidget(auto_desc)
+
+        auto_btn_layout = QHBoxLayout()
+        auto_btn = QPushButton("🔍 Select Root Folder & Auto-Setup")
+        auto_btn.setStyleSheet(
+            "QPushButton { padding: 10px; background-color: #28a745; color: white; "
+            "font-weight: bold; border-radius: 5px; }"
+            "QPushButton:hover { background-color: #218838; }"
+        )
+        auto_btn.clicked.connect(self._auto_setup_directories)
+        auto_btn_layout.addWidget(auto_btn)
+        auto_setup_layout.addLayout(auto_btn_layout)
+
+        layout.addWidget(auto_setup_box)
+
         # Warning if already configured
         existing_bp = self.app_context.settings.get('blueprints_dir', '')
         existing_cf = self.app_context.settings.get('customer_files_dir', '')
@@ -801,6 +829,178 @@ class OOBEWizard(QDialog):
         dir_path = QFileDialog.getExistingDirectory(self, "Select Directory")
         if dir_path:
             line_edit.setText(dir_path)
+
+    def _auto_setup_directories(self):
+        """Auto-setup standard directory structure from root folder"""
+        from pathlib import Path
+        from PyQt6.QtWidgets import QMessageBox, QInputDialog
+        import platform
+        import json
+
+        # Ask user to select root folder
+        root_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select Root Folder (JobDocs will create subdirectories here)",
+            "",
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        if not root_dir:
+            return  # User cancelled
+
+        root_path = Path(root_dir)
+
+        # Define standard subdirectories
+        blueprints_path = root_path / "blueprints"
+        customer_files_path = root_path / "customer files"
+
+        # Define hidden network settings folder
+        # Use .jobdocs on Unix/Mac, jobdocs on Windows (will be hidden via attribute)
+        if platform.system() == 'Windows':
+            network_folder = root_path / "jobdocs"
+        else:
+            network_folder = root_path / ".jobdocs"
+
+        network_settings_path = network_folder / "shared_settings.json"
+        network_history_path = network_folder / "shared_history.json"
+        network_users_path = network_folder / "shared_users.json"
+
+        # Show confirmation
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Confirm Auto-Setup")
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setText(
+            f"JobDocs will create the following structure:\n\n"
+            f"📐 Blueprints: {blueprints_path}\n"
+            f"👥 Customer Files: {customer_files_path}\n"
+            f"🔧 Network Settings (hidden): {network_folder}\n\n"
+            f"This will also:\n"
+            f"  ✓ Enable team sharing\n"
+            f"  ✓ Enable user accounts\n"
+            f"  ✓ Create initial admin user\n\n"
+            f"Continue?"
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setDefaultButton(QMessageBox.StandardButton.Yes)
+
+        if msg.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        # Prompt for admin username and password
+        username, ok = QInputDialog.getText(
+            self,
+            "Create Admin Account",
+            "Enter admin username:",
+            text="admin"
+        )
+
+        if not ok or not username.strip():
+            QMessageBox.warning(self, "Cancelled", "Auto-setup cancelled. Admin account is required.")
+            return
+
+        username = username.strip().lower()
+
+        password, ok = QInputDialog.getText(
+            self,
+            "Create Admin Account",
+            f"Enter password for '{username}':",
+            QLineEdit.EchoMode.Password
+        )
+
+        if not ok or not password:
+            QMessageBox.warning(self, "Cancelled", "Auto-setup cancelled. Password is required.")
+            return
+
+        # Create directories
+        try:
+            blueprints_path.mkdir(parents=True, exist_ok=True)
+            customer_files_path.mkdir(parents=True, exist_ok=True)
+            network_folder.mkdir(parents=True, exist_ok=True)
+
+            # On Windows, set hidden attribute on network folder
+            if platform.system() == 'Windows':
+                import subprocess
+                try:
+                    subprocess.run(['attrib', '+H', str(network_folder)], check=False)
+                except:
+                    pass  # Not critical if this fails
+
+            # Create initial admin user in network users file
+            from modules.user_auth.user_auth import UserAuth
+            import hashlib
+            import secrets
+
+            # Generate salt and hash password
+            salt = secrets.token_hex(32)
+            password_hash = hashlib.pbkdf2_hmac(
+                'sha256',
+                password.encode('utf-8'),
+                bytes.fromhex(salt),
+                100000
+            ).hex()
+
+            # Create users.json with admin user
+            users_data = {
+                username: {
+                    "password_hash": password_hash,
+                    "salt": salt,
+                    "full_name": "",
+                    "is_admin": True,
+                    "created": None,
+                    "last_login": None
+                }
+            }
+
+            with open(network_users_path, 'w') as f:
+                json.dump(users_data, f, indent=2)
+
+            # Create empty network settings and history files
+            with open(network_settings_path, 'w') as f:
+                json.dump({}, f, indent=2)
+
+            with open(network_history_path, 'w') as f:
+                json.dump({"recent_jobs": [], "customers": []}, f, indent=2)
+
+            # Update the directory UI fields
+            self.bp_dir_edit.setText(str(blueprints_path))
+            self.cf_dir_edit.setText(str(customer_files_path))
+
+            # Update the network settings UI fields (if they exist)
+            if hasattr(self, 'network_settings_edit'):
+                self.network_settings_edit.setText(str(network_settings_path))
+            if hasattr(self, 'network_history_edit'):
+                self.network_history_edit.setText(str(network_history_path))
+            if hasattr(self, 'network_users_edit'):
+                self.network_users_edit.setText(str(network_users_path))
+
+            # Enable network sharing checkbox
+            if hasattr(self, 'enable_network_check'):
+                self.enable_network_check.setChecked(True)
+
+            # Enable user auth checkbox
+            if hasattr(self, 'enable_user_auth_check'):
+                self.enable_user_auth_check.setChecked(True)
+
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Success",
+                f"✓ Auto-setup complete!\n\n"
+                f"📐 Blueprints: {blueprints_path}\n"
+                f"👥 Customer Files: {customer_files_path}\n"
+                f"🔧 Network Settings: {network_folder}\n"
+                f"👤 Admin User: {username}\n\n"
+                f"Team sharing and user accounts are now enabled.\n"
+                f"Click 'Finish' to complete setup."
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create auto-setup:\n{e}\n\n"
+                f"Please check permissions and try again, or set up manually."
+            )
 
     def _browse_file(self, line_edit: QLineEdit, default_filename: str = ""):
         """
