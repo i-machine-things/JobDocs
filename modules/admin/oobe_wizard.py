@@ -43,12 +43,20 @@ class OOBEWizard(QDialog):
 
     def setup_ui(self):
         """Setup the wizard UI"""
+        from PyQt6.QtWidgets import QScrollArea, QFrame
+
         layout = QVBoxLayout(self)
 
         # Title
         self.title_label = QLabel()
         self.title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(self.title_label)
+
+        # Scroll area for pages
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # Stacked widget for pages
         self.stack = QStackedWidget()
@@ -66,7 +74,8 @@ class OOBEWizard(QDialog):
         for page in self.pages:
             self.stack.addWidget(page)
 
-        layout.addWidget(self.stack)
+        scroll.setWidget(self.stack)
+        layout.addWidget(scroll)
 
         # Navigation buttons
         button_layout = QHBoxLayout()
