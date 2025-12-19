@@ -23,11 +23,12 @@ from shared.utils import get_os_type, get_os_text
 class SettingsDialog(QDialog):
     """Settings dialog"""
 
-    def __init__(self, settings: Dict[str, Any], parent=None, available_modules: List[tuple] = None):
+    def __init__(self, settings: Dict[str, Any], parent=None, available_modules: List[tuple] = None, is_admin: bool = True):
         super().__init__(parent)
         self.settings = settings.copy()
         self.available_modules = available_modules or []  # List of (module_name, display_name) tuples
         self.module_checkboxes = {}  # Store module checkboxes
+        self.is_admin = is_admin  # Track if user is admin
         self.setWindowTitle("Settings")
         self.setMinimumWidth(600)
         self.setup_ui()
@@ -45,106 +46,149 @@ class SettingsDialog(QDialog):
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
 
-        # Directories group
-        dir_group = QGroupBox("Directories")
-        dir_layout = QGridLayout(dir_group)
+        # Admin-only notice for regular users
+        if not self.is_admin:
+            notice = QLabel("⚠ Directory and file path settings are managed by your administrator.")
+            notice.setStyleSheet("color: #666; font-style: italic; padding: 10px; background-color: #f0f0f0; border-radius: 3px;")
+            notice.setWordWrap(True)
+            scroll_layout.addWidget(notice)
 
-        # Blueprints
-        dir_layout.addWidget(QLabel("Blueprints Directory:"), 0, 0)
-        self.blueprints_edit = QLineEdit(self.settings.get('blueprints_dir', ''))
-        dir_layout.addWidget(self.blueprints_edit, 0, 1)
-        bp_btn = QPushButton("Browse...")
-        bp_btn.clicked.connect(lambda: self.browse_dir(self.blueprints_edit))
-        dir_layout.addWidget(bp_btn, 0, 2)
+        # Directories group (admin only)
+        if self.is_admin:
+            dir_group = QGroupBox("Directories")
+            dir_layout = QGridLayout(dir_group)
 
-        # Customer files
-        dir_layout.addWidget(QLabel("Customer Files Directory:"), 1, 0)
-        self.customer_files_edit = QLineEdit(self.settings.get('customer_files_dir', ''))
-        dir_layout.addWidget(self.customer_files_edit, 1, 1)
-        cf_btn = QPushButton("Browse...")
-        cf_btn.clicked.connect(lambda: self.browse_dir(self.customer_files_edit))
-        dir_layout.addWidget(cf_btn, 1, 2)
+            # Blueprints
+            dir_layout.addWidget(QLabel("Blueprints Directory:"), 0, 0)
+            self.blueprints_edit = QLineEdit(self.settings.get('blueprints_dir', ''))
+            dir_layout.addWidget(self.blueprints_edit, 0, 1)
+            bp_btn = QPushButton("Browse...")
+            bp_btn.clicked.connect(lambda: self.browse_dir(self.blueprints_edit))
+            dir_layout.addWidget(bp_btn, 0, 2)
 
-        scroll_layout.addWidget(dir_group)
+            # Customer files
+            dir_layout.addWidget(QLabel("Customer Files Directory:"), 1, 0)
+            self.customer_files_edit = QLineEdit(self.settings.get('customer_files_dir', ''))
+            dir_layout.addWidget(self.customer_files_edit, 1, 1)
+            cf_btn = QPushButton("Browse...")
+            cf_btn.clicked.connect(lambda: self.browse_dir(self.customer_files_edit))
+            dir_layout.addWidget(cf_btn, 1, 2)
 
-        # ITAR directories group
-        itar_group = QGroupBox("ITAR Directories (optional)")
-        itar_layout = QGridLayout(itar_group)
-
-        itar_layout.addWidget(QLabel("ITAR Blueprints:"), 0, 0)
-        self.itar_blueprints_edit = QLineEdit(self.settings.get('itar_blueprints_dir', ''))
-        itar_layout.addWidget(self.itar_blueprints_edit, 0, 1)
-        itar_bp_btn = QPushButton("Browse...")
-        itar_bp_btn.clicked.connect(lambda: self.browse_dir(self.itar_blueprints_edit))
-        itar_layout.addWidget(itar_bp_btn, 0, 2)
-
-        itar_layout.addWidget(QLabel("ITAR Customer Files:"), 1, 0)
-        self.itar_customer_files_edit = QLineEdit(self.settings.get('itar_customer_files_dir', ''))
-        itar_layout.addWidget(self.itar_customer_files_edit, 1, 1)
-        itar_cf_btn = QPushButton("Browse...")
-        itar_cf_btn.clicked.connect(lambda: self.browse_dir(self.itar_customer_files_edit))
-        itar_layout.addWidget(itar_cf_btn, 1, 2)
-
-        scroll_layout.addWidget(itar_group)
-
-        # Link type group
-        link_group = QGroupBox("Link Type")
-        link_layout = QHBoxLayout(link_group)
-
-        self.link_type_group = QButtonGroup(self)
-        self.hard_radio = QRadioButton("Hard Link")
-        self.symbolic_radio = QRadioButton("Symbolic Link")
-        self.copy_radio = QRadioButton("Copy")
-
-        self.link_type_group.addButton(self.hard_radio, 0)
-        self.link_type_group.addButton(self.symbolic_radio, 1)
-        self.link_type_group.addButton(self.copy_radio, 2)
-
-        link_type = self.settings.get('link_type', 'hard')
-        if link_type == 'hard':
-            self.hard_radio.setChecked(True)
-        elif link_type == 'symbolic':
-            self.symbolic_radio.setChecked(True)
+            scroll_layout.addWidget(dir_group)
         else:
-            self.copy_radio.setChecked(True)
+            # Create dummy edits for non-admin to avoid errors in get_settings()
+            self.blueprints_edit = QLineEdit(self.settings.get('blueprints_dir', ''))
+            self.customer_files_edit = QLineEdit(self.settings.get('customer_files_dir', ''))
 
-        link_layout.addWidget(self.hard_radio)
-        link_layout.addWidget(self.symbolic_radio)
-        link_layout.addWidget(self.copy_radio)
-        link_layout.addStretch()
+        # ITAR directories group (admin only)
+        if self.is_admin:
+            itar_group = QGroupBox("ITAR Directories (optional)")
+            itar_layout = QGridLayout(itar_group)
 
-        # Add OS-specific tooltips
-        if get_os_type() == "windows":
-            self.hard_radio.setToolTip("Creates a hard link. Saves disk space. Files must be on same volume.")
-            self.symbolic_radio.setToolTip("Creates a symbolic link. Requires admin or Developer Mode.")
-            self.copy_radio.setToolTip("Creates independent copy. Use if on different drives.")
+            itar_layout.addWidget(QLabel("ITAR Blueprints:"), 0, 0)
+            self.itar_blueprints_edit = QLineEdit(self.settings.get('itar_blueprints_dir', ''))
+            itar_layout.addWidget(self.itar_blueprints_edit, 0, 1)
+            itar_bp_btn = QPushButton("Browse...")
+            itar_bp_btn.clicked.connect(lambda: self.browse_dir(self.itar_blueprints_edit))
+            itar_layout.addWidget(itar_bp_btn, 0, 2)
+
+            itar_layout.addWidget(QLabel("ITAR Customer Files:"), 1, 0)
+            self.itar_customer_files_edit = QLineEdit(self.settings.get('itar_customer_files_dir', ''))
+            itar_layout.addWidget(self.itar_customer_files_edit, 1, 1)
+            itar_cf_btn = QPushButton("Browse...")
+            itar_cf_btn.clicked.connect(lambda: self.browse_dir(self.itar_customer_files_edit))
+            itar_layout.addWidget(itar_cf_btn, 1, 2)
+
+            scroll_layout.addWidget(itar_group)
         else:
-            self.hard_radio.setToolTip("Creates a hard link. Recommended - saves disk space.")
-            self.symbolic_radio.setToolTip("Creates a symbolic link.")
-            self.copy_radio.setToolTip("Creates an independent copy.")
+            # Create dummy edits for non-admin to avoid errors in get_settings()
+            self.itar_blueprints_edit = QLineEdit(self.settings.get('itar_blueprints_dir', ''))
+            self.itar_customer_files_edit = QLineEdit(self.settings.get('itar_customer_files_dir', ''))
 
-        scroll_layout.addWidget(link_group)
+        # Link type group (admin only)
+        if self.is_admin:
+            link_group = QGroupBox("Link Type")
+            link_layout = QHBoxLayout(link_group)
 
-        # Blueprint extensions
-        ext_group = QGroupBox("Blueprint File Types")
-        ext_layout = QVBoxLayout(ext_group)
+            self.link_type_group = QButtonGroup(self)
+            self.hard_radio = QRadioButton("Hard Link")
+            self.symbolic_radio = QRadioButton("Symbolic Link")
+            self.copy_radio = QRadioButton("Copy")
 
-        ext_layout.addWidget(QLabel("Files with these extensions go to blueprints folder:"))
-        self.extensions_edit = QLineEdit(
-            ', '.join(self.settings.get('blueprint_extensions', ['.pdf', '.dwg', '.dxf']))
-        )
-        ext_layout.addWidget(self.extensions_edit)
-        ext_layout.addWidget(QLabel("(comma-separated, e.g., .pdf, .dwg, .dxf)"))
+            self.link_type_group.addButton(self.hard_radio, 0)
+            self.link_type_group.addButton(self.symbolic_radio, 1)
+            self.link_type_group.addButton(self.copy_radio, 2)
 
-        scroll_layout.addWidget(ext_group)
+            link_type = self.settings.get('link_type', 'hard')
+            if link_type == 'hard':
+                self.hard_radio.setChecked(True)
+            elif link_type == 'symbolic':
+                self.symbolic_radio.setChecked(True)
+            else:
+                self.copy_radio.setChecked(True)
+
+            link_layout.addWidget(self.hard_radio)
+            link_layout.addWidget(self.symbolic_radio)
+            link_layout.addWidget(self.copy_radio)
+            link_layout.addStretch()
+
+            # Add OS-specific tooltips
+            if get_os_type() == "windows":
+                self.hard_radio.setToolTip("Creates a hard link. Saves disk space. Files must be on same volume.")
+                self.symbolic_radio.setToolTip("Creates a symbolic link. Requires admin or Developer Mode.")
+                self.copy_radio.setToolTip("Creates independent copy. Use if on different drives.")
+            else:
+                self.hard_radio.setToolTip("Creates a hard link. Recommended - saves disk space.")
+                self.symbolic_radio.setToolTip("Creates a symbolic link.")
+                self.copy_radio.setToolTip("Creates an independent copy.")
+
+            scroll_layout.addWidget(link_group)
+        else:
+            # Create dummy radio buttons for non-admin
+            self.link_type_group = QButtonGroup(self)
+            self.hard_radio = QRadioButton("Hard Link")
+            self.symbolic_radio = QRadioButton("Symbolic Link")
+            self.copy_radio = QRadioButton("Copy")
+            link_type = self.settings.get('link_type', 'hard')
+            if link_type == 'hard':
+                self.hard_radio.setChecked(True)
+            elif link_type == 'symbolic':
+                self.symbolic_radio.setChecked(True)
+            else:
+                self.copy_radio.setChecked(True)
+
+        # Blueprint extensions (admin only)
+        if self.is_admin:
+            ext_group = QGroupBox("Blueprint File Types")
+            ext_layout = QVBoxLayout(ext_group)
+
+            ext_layout.addWidget(QLabel("Files with these extensions go to blueprints folder:"))
+            self.extensions_edit = QLineEdit(
+                ', '.join(self.settings.get('blueprint_extensions', ['.pdf', '.dwg', '.dxf']))
+            )
+            ext_layout.addWidget(self.extensions_edit)
+            ext_layout.addWidget(QLabel("(comma-separated, e.g., .pdf, .dwg, .dxf)"))
+
+            scroll_layout.addWidget(ext_group)
+        else:
+            # Create dummy edit for non-admin
+            self.extensions_edit = QLineEdit(
+                ', '.join(self.settings.get('blueprint_extensions', ['.pdf', '.dwg', '.dxf']))
+            )
 
         # Options
         options_group = QGroupBox("Options")
         options_layout = QVBoxLayout(options_group)
 
-        self.allow_duplicates_check = QCheckBox("Allow duplicate job numbers (not recommended)")
-        self.allow_duplicates_check.setChecked(self.settings.get('allow_duplicate_jobs', False))
-        options_layout.addWidget(self.allow_duplicates_check)
+        # Allow duplicates (admin only)
+        if self.is_admin:
+            self.allow_duplicates_check = QCheckBox("Allow duplicate job numbers (not recommended)")
+            self.allow_duplicates_check.setChecked(self.settings.get('allow_duplicate_jobs', False))
+            options_layout.addWidget(self.allow_duplicates_check)
+        else:
+            # Create dummy checkbox for non-admin
+            self.allow_duplicates_check = QCheckBox("Allow duplicate job numbers (not recommended)")
+            self.allow_duplicates_check.setChecked(self.settings.get('allow_duplicate_jobs', False))
 
         # Default tab setting
         default_tab_layout = QHBoxLayout()
@@ -215,21 +259,29 @@ class SettingsDialog(QDialog):
         path_sep = get_os_text('path_sep')
         legacy_example = f"{{customer}}{path_sep}job documents{path_sep}{{job_folder}}"
 
-        advanced_content_layout.addWidget(QLabel("Job Folder Structure:"))
-        advanced_content_layout.addWidget(QLabel("Available placeholders: {customer}, {job_folder}"))
-        advanced_content_layout.addWidget(QLabel(f"Default: {path_example}"))
-        advanced_content_layout.addWidget(QLabel(f"Legacy: {legacy_example}"))
+        # Job folder structure (admin only)
+        if self.is_admin:
+            advanced_content_layout.addWidget(QLabel("Job Folder Structure:"))
+            advanced_content_layout.addWidget(QLabel("Available placeholders: {customer}, {job_folder}"))
+            advanced_content_layout.addWidget(QLabel(f"Default: {path_example}"))
+            advanced_content_layout.addWidget(QLabel(f"Legacy: {legacy_example}"))
 
-        self.job_structure_edit = QLineEdit(
-            self.settings.get('job_folder_structure', '{customer}/{job_folder}/job documents')
-        )
-        advanced_content_layout.addWidget(self.job_structure_edit)
+            self.job_structure_edit = QLineEdit(
+                self.settings.get('job_folder_structure', '{customer}/{job_folder}/job documents')
+            )
+            advanced_content_layout.addWidget(self.job_structure_edit)
 
-        advanced_content_layout.addWidget(QLabel(""))
+            advanced_content_layout.addWidget(QLabel(""))
 
-        advanced_content_layout.addWidget(QLabel("Quote Folder Path:"))
-        self.quote_folder_edit = QLineEdit(self.settings.get('quote_folder_path', 'Quotes'))
-        advanced_content_layout.addWidget(self.quote_folder_edit)
+            advanced_content_layout.addWidget(QLabel("Quote Folder Path:"))
+            self.quote_folder_edit = QLineEdit(self.settings.get('quote_folder_path', 'Quotes'))
+            advanced_content_layout.addWidget(self.quote_folder_edit)
+        else:
+            # Create dummy edits for non-admin
+            self.job_structure_edit = QLineEdit(
+                self.settings.get('job_folder_structure', '{customer}/{job_folder}/job documents')
+            )
+            self.quote_folder_edit = QLineEdit(self.settings.get('quote_folder_path', 'Quotes'))
 
         advanced_content_layout.addWidget(QLabel(""))
 
@@ -239,56 +291,64 @@ class SettingsDialog(QDialog):
 
         advanced_content_layout.addWidget(QLabel(""))
 
-        # Network shared settings
-        network_label = QLabel("Network Shared Settings:")
-        network_label.setStyleSheet("font-weight: bold;")
-        advanced_content_layout.addWidget(network_label)
+        # Network shared settings (admin only)
+        if self.is_admin:
+            network_label = QLabel("Network Shared Settings:")
+            network_label.setStyleSheet("font-weight: bold;")
+            advanced_content_layout.addWidget(network_label)
 
-        advanced_content_layout.addWidget(QLabel(
-            "Share global settings and history across multiple users/machines.\n"
-            "Personal settings (theme, visible tabs, start tab) remain local.\n"
-            "Note: Files will be hidden to prevent accidental tampering."
-        ))
+            advanced_content_layout.addWidget(QLabel(
+                "Share global settings and history across multiple users/machines.\n"
+                "Personal settings (theme, visible tabs, start tab) remain local.\n"
+                "Note: Files will be hidden to prevent accidental tampering."
+            ))
 
-        self.enable_network_check = QCheckBox("Enable network shared settings")
-        self.enable_network_check.setChecked(self.settings.get('network_shared_enabled', False))
-        self.enable_network_check.toggled.connect(self.toggle_network_fields)
-        advanced_content_layout.addWidget(self.enable_network_check)
+            self.enable_network_check = QCheckBox("Enable network shared settings")
+            self.enable_network_check.setChecked(self.settings.get('network_shared_enabled', False))
+            self.enable_network_check.toggled.connect(self.toggle_network_fields)
+            advanced_content_layout.addWidget(self.enable_network_check)
 
-        network_paths_layout = QGridLayout()
+            network_paths_layout = QGridLayout()
 
-        network_paths_layout.addWidget(QLabel("Shared Settings File:"), 0, 0)
-        self.network_settings_edit = QLineEdit(self.settings.get('network_settings_path', ''))
-        self.network_settings_edit.setPlaceholderText(r"\\server\share\jobdocs\shared_settings.json")
-        network_paths_layout.addWidget(self.network_settings_edit, 0, 1)
-        network_settings_btn = QPushButton("Browse...")
-        network_settings_btn.clicked.connect(lambda: self.browse_file(
-            self.network_settings_edit,
-            "JSON Files (*.json)",
-            "jobdocs-settings.json"
-        ))
-        network_paths_layout.addWidget(network_settings_btn, 0, 2)
+            network_paths_layout.addWidget(QLabel("Shared Settings File:"), 0, 0)
+            self.network_settings_edit = QLineEdit(self.settings.get('network_settings_path', ''))
+            self.network_settings_edit.setPlaceholderText(r"\\server\share\jobdocs\shared_settings.json")
+            network_paths_layout.addWidget(self.network_settings_edit, 0, 1)
+            network_settings_btn = QPushButton("Browse...")
+            network_settings_btn.clicked.connect(lambda: self.browse_file(
+                self.network_settings_edit,
+                "JSON Files (*.json)",
+                "jobdocs-settings.json"
+            ))
+            network_paths_layout.addWidget(network_settings_btn, 0, 2)
 
-        network_paths_layout.addWidget(QLabel("Shared History File:"), 1, 0)
-        self.network_history_edit = QLineEdit(self.settings.get('network_history_path', ''))
-        self.network_history_edit.setPlaceholderText(r"\\server\share\jobdocs\shared_history.json")
-        network_paths_layout.addWidget(self.network_history_edit, 1, 1)
-        network_history_btn = QPushButton("Browse...")
-        network_history_btn.clicked.connect(lambda: self.browse_file(
-            self.network_history_edit,
-            "JSON Files (*.json)",
-            "jobdocs-history.json"
-        ))
-        network_paths_layout.addWidget(network_history_btn, 1, 2)
+            network_paths_layout.addWidget(QLabel("Shared History File:"), 1, 0)
+            self.network_history_edit = QLineEdit(self.settings.get('network_history_path', ''))
+            self.network_history_edit.setPlaceholderText(r"\\server\share\jobdocs\shared_history.json")
+            network_paths_layout.addWidget(self.network_history_edit, 1, 1)
+            network_history_btn = QPushButton("Browse...")
+            network_history_btn.clicked.connect(lambda: self.browse_file(
+                self.network_history_edit,
+                "JSON Files (*.json)",
+                "jobdocs-history.json"
+            ))
+            network_paths_layout.addWidget(network_history_btn, 1, 2)
 
-        advanced_content_layout.addLayout(network_paths_layout)
+            advanced_content_layout.addLayout(network_paths_layout)
 
-        # Store widgets for toggling
-        self.network_widgets = [
-            self.network_settings_edit, network_settings_btn,
-            self.network_history_edit, network_history_btn
-        ]
-        self.toggle_network_fields(self.enable_network_check.isChecked())
+            # Store widgets for toggling
+            self.network_widgets = [
+                self.network_settings_edit, network_settings_btn,
+                self.network_history_edit, network_history_btn
+            ]
+            self.toggle_network_fields(self.enable_network_check.isChecked())
+        else:
+            # Create dummy widgets for non-admin
+            self.enable_network_check = QCheckBox("Enable network shared settings")
+            self.enable_network_check.setChecked(self.settings.get('network_shared_enabled', False))
+            self.network_settings_edit = QLineEdit(self.settings.get('network_settings_path', ''))
+            self.network_history_edit = QLineEdit(self.settings.get('network_history_path', ''))
+            self.network_widgets = []
 
         advanced_layout.addWidget(self.advanced_content)
 

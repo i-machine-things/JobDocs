@@ -72,28 +72,9 @@ class JobDocsMainWindow(QMainWindow):
         self.modules = []  # Store loaded modules
         self.current_user = None  # Current logged-in user
         self.user_is_admin = False  # Whether current user is admin
+        self.user_auth = None  # Will be initialized after OOBE if needed
 
-        # Initialize user authentication (requires user_auth module)
-        self.user_auth = None
-        if self.settings.get('user_auth_enabled', False):
-            try:
-                from modules.user_auth.user_auth import UserAuth
-
-                # Get network users path if configured
-                network_users_path = self.settings.get('network_users_path', '')
-                network_users_file = Path(network_users_path) if network_users_path else None
-
-                self.user_auth = UserAuth(self.users_file, network_users_file)
-
-                # Show login dialog
-                if not self._login():
-                    # User cancelled login or failed to authenticate
-                    sys.exit(0)
-            except ImportError:
-                # Module not enabled (still has underscore prefix)
-                pass
-
-        # Setup UI
+        # Setup UI first (needed for OOBE wizard)
         self.setWindowTitle("JobDocs")
         self.resize(700, 600)
 
@@ -116,7 +97,7 @@ class JobDocsMainWindow(QMainWindow):
             main_window=self
         )
 
-        # Load modules
+        # Load modules (needed for OOBE)
         self.load_modules()
 
         # Setup menu
@@ -132,9 +113,29 @@ class JobDocsMainWindow(QMainWindow):
 
         self.statusBar().showMessage("Ready")
 
-        # Check for first-time setup
+        # Check for first-time setup BEFORE user authentication
+        # This allows OOBE to configure network_users_path
         if not self.settings.get('oobe_completed', False):
             self._run_first_time_setup()
+
+        # Initialize user authentication AFTER OOBE (requires user_auth module)
+        if self.settings.get('user_auth_enabled', False):
+            try:
+                from modules.user_auth.user_auth import UserAuth
+
+                # Get network users path if configured (may have been set by OOBE)
+                network_users_path = self.settings.get('network_users_path', '')
+                network_users_file = Path(network_users_path) if network_users_path else None
+
+                self.user_auth = UserAuth(self.users_file, network_users_file)
+
+                # Show login dialog
+                if not self._login():
+                    # User cancelled login or failed to authenticate
+                    sys.exit(0)
+            except ImportError:
+                # Module not enabled (still has underscore prefix)
+                pass
 
     # ==================== First-Time Setup ====================
 
@@ -496,13 +497,21 @@ class JobDocsMainWindow(QMainWindow):
         if self.user_is_admin and self.admin_module:
             admin_menu = menubar.addMenu("&Admin")
 
-            admin_panel_action = admin_menu.addAction("&Admin Panel")
-            admin_panel_action.triggered.connect(self.open_admin_panel)
+            # Setup wizard
+            setup_action = admin_menu.addAction("&Setup Wizard")
+            setup_action.triggered.connect(self.run_setup_wizard)
 
             admin_menu.addSeparator()
 
+            # User management
             user_management_action = admin_menu.addAction("&User Management")
             user_management_action.triggered.connect(self.open_user_management)
+
+            admin_menu.addSeparator()
+
+            # Team Settings
+            team_settings_action = admin_menu.addAction("&Team Settings")
+            team_settings_action.triggered.connect(self.open_team_settings)
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -538,7 +547,7 @@ class JobDocsMainWindow(QMainWindow):
                 # If we can't load it, just use the module name
                 available_modules.append((module_name, module_name))
 
-        dialog = SettingsDialog(self.settings, self, available_modules)
+        dialog = SettingsDialog(self.settings, self, available_modules, self.user_is_admin)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.settings = dialog.settings
             self.save_settings()
@@ -576,22 +585,27 @@ Search across all customers and jobs.</p>
         msg.setText(content)
         msg.exec()
 
-    def open_admin_panel(self):
-        """Open the admin panel in a dialog"""
+    def run_setup_wizard(self):
+        """Run the OOBE setup wizard"""
         if not self.admin_module:
-            QMessageBox.warning(self, "Admin Panel", "Admin module not available")
+            QMessageBox.warning(self, "Setup Wizard", "Admin module not available")
             return
 
-        # Create a dialog to host the admin widget
-        from PyQt6.QtWidgets import QVBoxLayout
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Admin Panel")
-        dialog.setMinimumSize(800, 600)
+        try:
+            self.admin_module.run_oobe_wizard()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to run setup wizard: {e}")
 
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(self.admin_module.get_widget())
+    def open_team_settings(self):
+        """Open team settings editor"""
+        if not self.admin_module:
+            QMessageBox.warning(self, "Team Settings", "Admin module not available")
+            return
 
-        dialog.exec()
+        try:
+            self.admin_module.edit_settings_file()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open team settings: {e}")
 
     def open_user_management(self):
         """Open user management dialog"""

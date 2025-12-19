@@ -65,6 +65,11 @@ class CreateUserDialog(QDialog):
         self.show_password_check.toggled.connect(self.toggle_password_visibility)
         layout.addWidget(self.show_password_check)
 
+        # Admin privileges checkbox
+        self.admin_check = QCheckBox("Admin privileges")
+        self.admin_check.setToolTip("Admin users can access user management, team settings, and setup wizard")
+        layout.addWidget(self.admin_check)
+
         # Buttons
         button_layout = QHBoxLayout()
         create_btn = QPushButton("Create User")
@@ -90,6 +95,7 @@ class CreateUserDialog(QDialog):
         password = self.password_edit.text()
         confirm = self.confirm_edit.text()
         full_name = self.fullname_edit.text().strip()
+        is_admin = self.admin_check.isChecked()
 
         if not username:
             QMessageBox.warning(self, "Error", "Username cannot be empty.")
@@ -104,7 +110,7 @@ class CreateUserDialog(QDialog):
             return
 
         try:
-            self.user_auth.create_user(username, password, full_name)
+            self.user_auth.create_user(username, password, full_name, is_admin)
             self.username = username
             self.accept()
         except ValueError as e:
@@ -174,9 +180,13 @@ class UserManagementDialog(QDialog):
         for username in sorted(self.user_auth.list_users()):
             user_info = self.user_auth.get_user_info(username)
             full_name = user_info.get('full_name', '')
+            is_admin = user_info.get('is_admin', False)
+
             display = f"{username}"
             if full_name:
                 display += f" ({full_name})"
+            if is_admin:
+                display += " [ADMIN]"
             if username == self.current_user:
                 display += " [YOU]"
             self.user_list.addItem(display)
