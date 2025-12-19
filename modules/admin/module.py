@@ -730,6 +730,7 @@ class AdminModule(BaseModule):
         dialog = QDialog(self._widget)
         dialog.setWindowTitle(title)
         dialog.setMinimumSize(600, 400)
+        dialog.setMaximumHeight(700)  # Prevent window from exceeding 700px
 
         layout = QVBoxLayout(dialog)
 

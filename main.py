@@ -77,6 +77,7 @@ class JobDocsMainWindow(QMainWindow):
         # Setup UI first (needed for OOBE wizard)
         self.setWindowTitle("JobDocs")
         self.resize(700, 600)
+        self.setMaximumHeight(700)  # Prevent window from exceeding 700px
 
         # Create tab widget
         self.tabs = QTabWidget()

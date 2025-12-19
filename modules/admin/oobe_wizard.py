@@ -34,6 +34,7 @@ class OOBEWizard(QDialog):
         self.setWindowTitle("JobDocs First-Time Setup")
         self.setModal(True)
         self.setMinimumSize(700, 500)
+        self.setMaximumHeight(700)  # Prevent window from exceeding 700px
 
         self.current_page = 0
         self.pages = []

@@ -146,6 +146,7 @@ class JobSearchDialog(QDialog):
 
         self.setWindowTitle(f"Search {search_type.title()}")
         self.resize(700, 500)
+        self.setMaximumHeight(700)  # Prevent window from exceeding 700px
 
         # Create layout
         layout = QVBoxLayout(self)

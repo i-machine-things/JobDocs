@@ -24,6 +24,7 @@ class CreateUserDialog(QDialog):
         self.setWindowTitle("Create New User")
         self.setModal(True)
         self.setMinimumWidth(400)
+        self.setMaximumHeight(700)  # Prevent window from exceeding 700px
         self.setup_ui()
 
     def setup_ui(self):
@@ -127,6 +128,7 @@ class UserManagementDialog(QDialog):
         self.setWindowTitle("User Management")
         self.setMinimumWidth(500)
         self.setMinimumHeight(400)
+        self.setMaximumHeight(700)  # Prevent window from exceeding 700px
         self.setup_ui()
         self.refresh_user_list()
 
@@ -260,6 +262,7 @@ class ChangePasswordDialog(QDialog):
         self.setWindowTitle("Change Password")
         self.setModal(True)
         self.setMinimumWidth(400)
+        self.setMaximumHeight(700)  # Prevent window from exceeding 700px
         self.setup_ui()
 
     def setup_ui(self):

@@ -31,6 +31,7 @@ class SettingsDialog(QDialog):
         self.is_admin = is_admin  # Track if user is admin
         self.setWindowTitle("Settings")
         self.setMinimumWidth(600)
+        self.setMaximumHeight(700)  # Prevent window from exceeding 700px
         self.setup_ui()
 
     def setup_ui(self):
