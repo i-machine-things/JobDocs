@@ -642,6 +642,103 @@ class AdminModule(BaseModule):
 
     # ==================== GLOBAL SETTINGS METHODS ====================
 
+    def show_team_settings_dialog(self):
+        """Show team settings in a user-friendly dialog"""
+        # Check if network sharing is enabled
+        network_enabled = self.app_context.get_setting('network_shared_enabled', False)
+        network_path = self.app_context.get_setting('network_settings_path', '')
+
+        if not network_enabled or not network_path:
+            self.show_info(
+                "Team Settings",
+                "Team settings are not currently enabled.\n\n"
+                "To enable team settings, run the Setup Wizard from Admin → Setup Wizard."
+            )
+            return
+
+        # Create dialog
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton
+
+        dialog = QDialog(self._widget if self._widget else self.app_context.main_window)
+        dialog.setWindowTitle("Team Settings")
+        dialog.setMinimumSize(700, 500)
+
+        layout = QVBoxLayout(dialog)
+
+        # Settings table
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Setting Name", "Value", "Shared?"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        table.setAlternatingRowColors(True)
+
+        # Populate table
+        settings = self.app_context.settings
+        personal_settings = getattr(
+            self.app_context.main_window,
+            'PERSONAL_SETTINGS',
+            {'ui_style', 'default_tab'}
+        ) if self.app_context.main_window else set()
+
+        row = 0
+        for key, value in sorted(settings.items()):
+            # Skip internal/sensitive settings
+            if key in {'network_settings_path', 'network_history_path', 'network_shared_enabled'}:
+                continue
+
+            table.insertRow(row)
+            table.setItem(row, 0, QTableWidgetItem(key))
+
+            value_str = str(value)
+            if len(value_str) > 100:
+                value_str = value_str[:97] + "..."
+            table.setItem(row, 1, QTableWidgetItem(value_str))
+
+            is_shared = key not in personal_settings
+            shared_item = QTableWidgetItem("Yes" if is_shared else "No (Local)")
+            if not is_shared:
+                shared_item.setForeground(Qt.GlobalColor.gray)
+            table.setItem(row, 2, shared_item)
+
+            row += 1
+
+        layout.addWidget(table)
+
+        # Info message
+        info_msg = QLabel(
+            "💡 To change most settings, use File → Settings.\n"
+            "Advanced users can edit the JSON file directly using the button below."
+        )
+        info_msg.setStyleSheet("color: #666; font-size: 11px; font-style: italic; margin-top: 5px;")
+        info_msg.setWordWrap(True)
+        layout.addWidget(info_msg)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        edit_json_btn = QPushButton("Advanced: Edit JSON File")
+        edit_json_btn.setToolTip("Edit the raw settings file (for advanced users)")
+        edit_json_btn.setStyleSheet("color: #cc6600;")
+        edit_json_btn.clicked.connect(lambda: self._edit_json_from_dialog(dialog))
+        button_layout.addWidget(edit_json_btn)
+
+        button_layout.addStretch()
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        button_layout.addWidget(close_btn)
+
+        layout.addLayout(button_layout)
+
+        dialog.exec()
+
+    def _edit_json_from_dialog(self, parent_dialog):
+        """Edit JSON file from within the settings dialog"""
+        parent_dialog.accept()  # Close the parent dialog
+        self.edit_settings_file()  # Open JSON editor
+
     def refresh_settings(self):
         """Refresh the settings display"""
         if not self.settings_table:

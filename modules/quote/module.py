@@ -17,7 +17,7 @@ from core.base_module import BaseModule
 from shared.widgets import DropZone, JobSearchDialog
 from shared.utils import (
     is_blueprint_file, parse_job_numbers, create_file_link, sanitize_filename,
-    open_folder
+    open_folder, get_next_number
 )
 
 
@@ -88,6 +88,7 @@ class QuoteModule(BaseModule):
         widget.clear_btn.clicked.connect(self.clear_quote_form)
         widget.open_bp_btn.clicked.connect(self.open_blueprints_folder)
         widget.open_cf_btn.clicked.connect(self.open_customer_files_folder)
+        widget.auto_gen_quote_btn.clicked.connect(self.auto_generate_quote_number)
 
         # Customer list will be populated by main window after all modules load
 
@@ -286,6 +287,12 @@ class QuoteModule(BaseModule):
         self.quote_description_edit.clear()
         self.quote_drawings_edit.clear()
         self.clear_quote_files()
+
+    def auto_generate_quote_number(self):
+        """Auto-generate the next quote number"""
+        next_number = get_next_number(self.app_context.history, 'quote', start_number=10000)
+        self.quote_number_edit.setText(next_number)
+        self.log_message(f"Auto-generated quote number: {next_number}")
 
     # ==================== Quote to Job Conversion ====================
 

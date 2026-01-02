@@ -6,7 +6,7 @@ Provides user authentication UI.
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QMessageBox, QCheckBox
+    QPushButton, QMessageBox, QCheckBox, QTabWidget, QListWidget, QWidget
 )
 from PyQt6.QtCore import Qt
 from modules.user_auth.user_auth import UserAuth
@@ -27,11 +27,19 @@ class LoginDialog(QDialog):
     def setup_ui(self):
         layout = QVBoxLayout(self)
 
+        # Create tab widget
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+
+        # Login tab
+        login_tab = QWidget()
+        login_layout = QVBoxLayout(login_tab)
+
         # Title
         title = QLabel("JobDocs - User Login")
         title.setStyleSheet("font-size: 16px; font-weight: bold; margin: 10px;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        login_layout.addWidget(title)
 
         # Username
         username_layout = QHBoxLayout()
@@ -40,7 +48,7 @@ class LoginDialog(QDialog):
         self.username_edit.setPlaceholderText("Enter username")
         self.username_edit.returnPressed.connect(self.login)
         username_layout.addWidget(self.username_edit)
-        layout.addLayout(username_layout)
+        login_layout.addLayout(username_layout)
 
         # Password
         password_layout = QHBoxLayout()
@@ -50,12 +58,12 @@ class LoginDialog(QDialog):
         self.password_edit.setPlaceholderText("Enter password")
         self.password_edit.returnPressed.connect(self.login)
         password_layout.addWidget(self.password_edit)
-        layout.addLayout(password_layout)
+        login_layout.addLayout(password_layout)
 
         # Show password checkbox
         self.show_password_check = QCheckBox("Show password")
         self.show_password_check.toggled.connect(self.toggle_password_visibility)
-        layout.addWidget(self.show_password_check)
+        login_layout.addWidget(self.show_password_check)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -71,14 +79,42 @@ class LoginDialog(QDialog):
             create_user_btn.clicked.connect(self.create_first_user)
             button_layout.addWidget(create_user_btn)
 
-        layout.addLayout(button_layout)
+        login_layout.addLayout(button_layout)
 
         # Info message
         if not self.user_auth.list_users():
             info = QLabel("No users found. Create the first user to get started.")
             info.setStyleSheet("color: #666; font-style: italic; margin-top: 10px;")
             info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(info)
+            login_layout.addWidget(info)
+
+        # Add login tab
+        self.tabs.addTab(login_tab, "Login")
+
+        # Users tab
+        users_tab = QWidget()
+        users_layout = QVBoxLayout(users_tab)
+
+        # Users list
+        users_title = QLabel("Currently Logged In Users")
+        users_title.setStyleSheet("font-size: 14px; font-weight: bold; margin: 10px;")
+        users_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        users_layout.addWidget(users_title)
+
+        self.users_list = QListWidget()
+        self.users_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        users_layout.addWidget(self.users_list)
+
+        # Refresh button
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh_logged_in_users)
+        users_layout.addWidget(refresh_btn)
+
+        # Add users tab
+        self.tabs.addTab(users_tab, "Users")
+
+        # Populate users list initially
+        self.refresh_logged_in_users()
 
         # Focus username field
         self.username_edit.setFocus()
@@ -133,3 +169,37 @@ class LoginDialog(QDialog):
     def get_authenticated_user(self) -> str:
         """Get the authenticated username"""
         return self.authenticated_user
+
+    def refresh_logged_in_users(self):
+        """Refresh the list of currently logged-in users"""
+        self.users_list.clear()
+
+        # Get logged-in users from UserAuth
+        logged_in = self.user_auth.get_logged_in_users(timeout_minutes=60)
+
+        if not logged_in:
+            item_text = "No users currently logged in"
+            self.users_list.addItem(item_text)
+        else:
+            for user_info in logged_in:
+                username = user_info['username']
+                full_name = user_info['full_name']
+                login_time = user_info['login_time']
+
+                # Format the display text
+                if full_name:
+                    display_text = f"{username} ({full_name})"
+                else:
+                    display_text = username
+
+                # Add login time if available
+                if login_time:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(login_time)
+                        time_str = dt.strftime("%I:%M %p")
+                        display_text += f" - logged in at {time_str}"
+                    except ValueError:
+                        pass
+
+                self.users_list.addItem(display_text)

@@ -9,6 +9,7 @@ A modular tool for managing blueprint files and customer job directories with su
 - **Modular Plugin Architecture** - Extensible system with drop-in modules
 - **Single and Bulk Job Creation** - Create individual jobs or import multiple jobs from CSV
 - **Quote Management** - Create quotes that can be converted to jobs
+- **Auto-Generate Numbers** - Automatically generate next sequential job/quote number (starting at 10000)
 - **Blueprint File Management** - Centralized blueprint storage with hard linking to save disk space
 - **ITAR Support** - Separate directories and workflows for ITAR-controlled projects
 - **Advanced Search** - Find jobs by customer, job number, description, or drawing number
@@ -16,7 +17,9 @@ A modular tool for managing blueprint files and customer job directories with su
 - **Import Tools** - Direct import of files to blueprint folders
 - **History Tracking** - Keep track of recent jobs and customer information
 - **Network Shared Settings** - Global settings take precedence across all users for team consistency
-- **User Authentication** - Optional user accounts with secure password storage (experimental)
+- **User Authentication** - Optional user accounts with secure password storage
+  - **Session Tracking** - Monitor which users are currently logged in
+  - **Active Session Monitoring** - View logged-in users from the login screen
 - **Cross-Platform** - Works on Windows, macOS, and Linux
 
 ## Installation
@@ -109,7 +112,9 @@ See [docs/SETTINGS_PRIORITY.md](docs/SETTINGS_PRIORITY.md) for detailed priority
 
 1. Go to the **Create Quote** tab
 2. Enter customer name (auto-completes from existing customers)
-3. Enter quote number(s) - supports ranges like Q12345-Q12350
+3. Enter quote number(s):
+   - Click **Auto** button to auto-generate next number (starts at 10000)
+   - Or manually enter - supports ranges like Q12345-Q12350
 4. Enter description
 5. Optionally add drawing numbers (comma-separated)
 6. Add files by dragging/dropping
@@ -121,10 +126,12 @@ See [docs/SETTINGS_PRIORITY.md](docs/SETTINGS_PRIORITY.md) for detailed priority
 #### Single Job Creation
 1. Go to the **Create Job** tab
 2. Enter customer name (auto-completes from history)
-3. Enter job number(s) - supports:
-   - Single: `12345`
-   - Multiple: `12345, 12346, 12347`
-   - Range: `12345-12350`
+3. Enter job number(s):
+   - Click **Auto** button to auto-generate next number (starts at 10000)
+   - Or manually enter - supports:
+     - Single: `12345`
+     - Multiple: `12345, 12346, 12347`
+     - Range: `12345-12350`
 4. Enter description
 5. Optionally add drawing numbers (comma-separated)
 6. Add files by dragging/dropping or browsing
@@ -179,11 +186,14 @@ The **Search** tab provides powerful search capabilities:
 
 The **Admin** tab provides centralized management:
 
-#### User Management (Optional)
+#### User Management
 - Create and delete user accounts
-- View all users in the system
+- View all registered users in the system
 - Secure password storage with PBKDF2-HMAC-SHA256
-- **Requirements:** Enable `user_auth` module (rename `_user_auth` to `user_auth`)
+- Session tracking - monitor active user sessions
+- View currently logged-in users from the Login screen (Users tab)
+- Automatic session timeout (60 minutes of inactivity)
+- **Requirements:** Enable user authentication in setup wizard or settings
 
 #### Global Settings Management
 - View all application settings in table format
@@ -240,6 +250,7 @@ Files stored:
 - `settings.json` - Application settings (local and network configuration)
 - `history.json` - Recent jobs and customer history (local fallback)
 - `users.json` - User accounts (if user authentication is enabled)
+- `sessions.json` - Active user sessions (if user authentication is enabled)
 
 ### Network Shared Configuration
 
@@ -323,7 +334,9 @@ JobDocs/
 │   ├── admin/           # Admin module
 │   │   ├── module.py    # Admin functionality
 │   │   └── oobe_wizard.py # First-time setup wizard
-│   ├── _user_auth/      # User authentication (experimental, disabled by default)
+│   ├── user_auth/       # User authentication module
+│   │   ├── user_auth.py # Authentication & session tracking
+│   │   └── ui/          # Login dialog and user management UI
 │   └── ...
 ├── settings_dialog.py   # Settings UI
 ├── docs/                # Documentation
@@ -331,6 +344,7 @@ JobDocs/
 │   ├── OOBE_IMPROVEMENTS.md  # OOBE wizard improvements
 │   └── ...
 ├── old/                 # Legacy code (archived)
+├── requirements.txt     # Python dependencies
 └── README.md            # This file
 ```
 

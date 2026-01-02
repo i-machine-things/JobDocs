@@ -9,7 +9,8 @@ import json
 import hashlib
 import secrets
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
+from datetime import datetime, timedelta
 
 
 class UserAuth:
@@ -27,6 +28,12 @@ class UserAuth:
         self.network_users_file = network_users_file
         self.using_network = False
         self.users = self._load_users()
+
+        # Session tracking - store active sessions
+        # sessions_file is stored alongside users file
+        sessions_dir = self.network_users_file.parent if (self.using_network and self.network_users_file) else self.users_file.parent
+        self.sessions_file = sessions_dir / 'sessions.json'
+        self.sessions = self._load_sessions()
 
     def _load_users(self) -> Dict:
         """Load users from network file (preferred) or local file (fallback)"""
@@ -314,6 +321,94 @@ class UserAuth:
         username = username.lower().strip()
 
         if username in self.users:
-            from datetime import datetime
             self.users[username]['last_login'] = datetime.now().isoformat()
             self._save_users()
+
+    # ==================== Session Tracking ====================
+
+    def _load_sessions(self) -> Dict:
+        """Load active sessions from file"""
+        if self.sessions_file.exists():
+            try:
+                with open(self.sessions_file, 'r') as f:
+                    sessions = json.load(f)
+                return sessions
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Could not load sessions: {e}")
+        return {}
+
+    def _save_sessions(self):
+        """Save active sessions to file"""
+        try:
+            self.sessions_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.sessions_file, 'w') as f:
+                json.dump(self.sessions, f, indent=2)
+        except IOError as e:
+            print(f"Warning: Could not save sessions: {e}")
+
+    def login(self, username: str):
+        """
+        Record a user login session
+
+        Args:
+            username: Username that logged in
+        """
+        username = username.lower().strip()
+        if username in self.users:
+            self.sessions[username] = {
+                'login_time': datetime.now().isoformat(),
+                'full_name': self.users[username].get('full_name', '')
+            }
+            self._save_sessions()
+
+    def logout(self, username: str):
+        """
+        Remove a user's login session
+
+        Args:
+            username: Username that logged out
+        """
+        username = username.lower().strip()
+        if username in self.sessions:
+            del self.sessions[username]
+            self._save_sessions()
+
+    def get_logged_in_users(self, timeout_minutes: int = 60) -> List[Dict]:
+        """
+        Get list of currently logged-in users
+
+        Args:
+            timeout_minutes: Remove sessions older than this many minutes (default: 60)
+
+        Returns:
+            List of dicts with username, full_name, and login_time
+        """
+        # Clean up stale sessions
+        current_time = datetime.now()
+        stale_users = []
+
+        for username, session in self.sessions.items():
+            try:
+                login_time = datetime.fromisoformat(session['login_time'])
+                if current_time - login_time > timedelta(minutes=timeout_minutes):
+                    stale_users.append(username)
+            except (ValueError, KeyError):
+                stale_users.append(username)
+
+        # Remove stale sessions
+        for username in stale_users:
+            del self.sessions[username]
+
+        if stale_users:
+            self._save_sessions()
+
+        # Return active sessions
+        result = []
+        for username, session in self.sessions.items():
+            result.append({
+                'username': username,
+                'full_name': session.get('full_name', ''),
+                'login_time': session.get('login_time', '')
+            })
+
+        return sorted(result, key=lambda x: x['login_time'], reverse=True)

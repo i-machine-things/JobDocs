@@ -1,14 +1,12 @@
-# Test/sample directories
+# Test/sample directories (for development only)
 itar/
 not itar/
 sample_files/
 test_jobs.csv
 
-# Claude Code and development notes
-.claude/
-.claude_context.md
-.github-push-checklist.md
-docs/
+# Development and build scripts
+create_release.sh
+test_oobe.py
 
 # Python
 __pycache__/
@@ -19,9 +17,6 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
-dist/
-build/
-*.spec
 
 # Virtual environments
 venv/
@@ -63,9 +58,3 @@ JobDocs-Setup-*.exe
 # PyInstaller
 *.spec
 JobDocs-Windows/
-ignore.me.md
-sample file structure
-.claude_context.md
-RELEASE_NOTES.md
-.gitignore
-create_release.sh

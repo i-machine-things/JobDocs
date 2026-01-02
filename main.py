@@ -101,9 +101,6 @@ class JobDocsMainWindow(QMainWindow):
         # Load modules (needed for OOBE)
         self.load_modules()
 
-        # Setup menu
-        self.setup_menu()
-
         # Apply UI style
         self.apply_ui_style()
 
@@ -137,6 +134,9 @@ class JobDocsMainWindow(QMainWindow):
             except ImportError:
                 # Module not enabled (still has underscore prefix)
                 pass
+
+        # Setup menu AFTER user authentication so admin menu shows for admin users
+        self.setup_menu()
 
     # ==================== First-Time Setup ====================
 
@@ -215,12 +215,49 @@ class JobDocsMainWindow(QMainWindow):
             self.current_user = dialog.get_authenticated_user()
             self.user_is_admin = self.user_auth.is_admin(self.current_user)
 
+            # Record login session
+            self.user_auth.login(self.current_user)
+
             # Update window title with role indicator
             role_text = " (Admin)" if self.user_is_admin else ""
             self.setWindowTitle(f"JobDocs - {self.current_user}{role_text}")
 
             return True
         return False
+
+    def logout(self):
+        """Logout current user and restart to login screen"""
+        if not self.user_auth or not self.current_user:
+            return
+
+        # Confirm logout
+        reply = QMessageBox.question(
+            self,
+            "Logout",
+            f"Are you sure you want to logout?\n\nYou are currently logged in as: {self.current_user}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.log_message(f"User '{self.current_user}' logged out")
+
+            # Remove session tracking
+            self.user_auth.logout(self.current_user)
+
+            # Clear current user
+            old_user = self.current_user
+            self.current_user = None
+            self.user_is_admin = False
+
+            # Show login dialog again
+            if self._login():
+                # Successful login - rebuild menu with new user permissions
+                self.menuBar().clear()
+                self.setup_menu()
+            else:
+                # User cancelled login - close application
+                self.close()
 
     # ==================== Settings & History ====================
 
@@ -491,6 +528,12 @@ class JobDocsMainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        # Logout option (only if user authentication is enabled)
+        if self.user_auth and self.current_user:
+            logout_action = file_menu.addAction("&Logout")
+            logout_action.triggered.connect(self.logout)
+            file_menu.addSeparator()
+
         exit_action = file_menu.addAction("E&xit")
         exit_action.triggered.connect(self.close)
 
@@ -604,7 +647,7 @@ Search across all customers and jobs.</p>
             return
 
         try:
-            self.admin_module.edit_settings_file()
+            self.admin_module.show_team_settings_dialog()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to open team settings: {e}")
 
@@ -756,6 +799,10 @@ Search across all customers and jobs.</p>
     def closeEvent(self, event):
         """Handle window close event - ensure proper cleanup"""
         self.log_message("Application closing - cleaning up resources...")
+
+        # Remove user session if logged in
+        if self.user_auth and self.current_user:
+            self.user_auth.logout(self.current_user)
 
         # Cleanup all modules
         for module in self.modules:
