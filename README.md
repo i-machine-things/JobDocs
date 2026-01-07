@@ -7,6 +7,7 @@ A modular tool for managing blueprint files and customer job directories with su
 - **First-Time Setup Wizard** - Guided OOBE (Out-Of-Box Experience) for easy initial configuration
 - **Admin Module** - Centralized user management, global settings control, and system information
 - **Modular Plugin Architecture** - Extensible system with drop-in modules
+- **Auto-Generate Numbers** - Automatically generate next sequential job/quote number (starting at 10000)
 - **Single and Bulk Job Creation** - Create individual jobs or import multiple jobs from CSV
 - **Quote Management** - Create quotes that can be converted to jobs
 - **Auto-Generate Numbers** - Automatically generate next sequential job/quote number (starting at 10000)

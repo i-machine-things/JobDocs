@@ -1,12 +1,13 @@
-# Test/sample directories (for development only)
+# Test/sample directories
 itar/
 not itar/
 sample_files/
 test_jobs.csv
 
-# Development and build scripts
-create_release.sh
-test_oobe.py
+# Claude Code and development notes
+.claude/
+.github-push-checklist.md
+docs/
 
 # Python
 __pycache__/
@@ -17,6 +18,10 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
+dist/
+build/
+*.spec
+!build_scripts/JobDocs.spec
 
 # Virtual environments
 venv/
@@ -56,5 +61,6 @@ windows/Output/
 JobDocs-Setup-*.exe
 
 # PyInstaller
-*.spec
 JobDocs-Windows/
+ignore.me.md
+sample file structure
