@@ -10,7 +10,6 @@ A modular tool for managing blueprint files and customer job directories with su
 - **Auto-Generate Numbers** - Automatically generate next sequential job/quote number (starting at 10000)
 - **Single and Bulk Job Creation** - Create individual jobs or import multiple jobs from CSV
 - **Quote Management** - Create quotes that can be converted to jobs
-- **Auto-Generate Numbers** - Automatically generate next sequential job/quote number (starting at 10000)
 - **Blueprint File Management** - Centralized blueprint storage with hard linking to save disk space
 - **ITAR Support** - Separate directories and workflows for ITAR-controlled projects
 - **Advanced Search** - Find jobs by customer, job number, description, or drawing number
@@ -135,9 +134,10 @@ See [docs/SETTINGS_PRIORITY.md](docs/SETTINGS_PRIORITY.md) for detailed priority
      - Range: `12345-12350`
 4. Enter description
 5. Optionally add drawing numbers (comma-separated)
-6. Add files by dragging/dropping or browsing
-7. Click **Create Job**
-8. Use **Copy From...** to copy information from existing quotes or jobs
+6. Optionally add a PO number
+7. Add files by dragging/dropping or browsing
+8. Click **Create Job**
+9. Use **Copy From...** to copy information from existing quotes or jobs
 
 #### Bulk Job Creation
 1. Go to the **Bulk Create** tab
@@ -268,7 +268,7 @@ When network sharing is enabled:
 When network sharing is enabled, settings are applied in this order (highest to lowest):
 1. **Personal settings** from local file (ui_style, default_tab)
 2. **Network configuration** from local file (network paths)
-3. **Global settings** from network file ⭐ **TAKES PRECEDENCE**
+3. **Global settings** from network file - **TAKES PRECEDENCE**
 4. Non-personal settings from local file (fallback)
 5. Default settings (baseline)
 
@@ -313,7 +313,7 @@ JobDocs uses a plugin-based architecture:
 
 ### Creating Custom Modules
 
-See [MODULAR_SYSTEM.md](docs/MODULAR_SYSTEM.md) for details on creating custom modules.
+See [modules/_template/README.md](modules/_template/README.md) for details on creating custom modules.
 
 ## Development
 
@@ -324,10 +324,12 @@ JobDocs/
 ├── core/                # Core framework
 │   ├── base_module.py   # Module base class
 │   ├── app_context.py   # Shared application context
-│   └── module_loader.py # Auto module discovery
+│   ├── module_loader.py # Auto module discovery
+│   └── settings_dialog.py # Settings UI
 ├── shared/              # Shared utilities
 │   ├── utils.py         # File operations, parsing
-│   └── widgets.py       # Custom UI widgets
+│   ├── widgets.py       # Custom UI widgets
+│   └── remote_sync.py   # Remote settings synchronization
 ├── modules/             # Plugin modules
 │   ├── quote/           # Quote module
 │   ├── job/             # Job module
@@ -335,31 +337,45 @@ JobDocs/
 │   ├── admin/           # Admin module
 │   │   ├── module.py    # Admin functionality
 │   │   └── oobe_wizard.py # First-time setup wizard
-│   ├── user_auth/       # User authentication module
+│   ├── user_auth/       # User authentication backend (enable by removing underscore prefix)
 │   │   ├── user_auth.py # Authentication & session tracking
 │   │   └── ui/          # Login dialog and user management UI
-│   └── ...
-├── settings_dialog.py   # Settings UI
-├── docs/                # Documentation
+│   └── _template/       # Template for custom modules
+├── build_scripts/       # Build configuration
+├── windows/             # Windows installer files
+├── linux/               # Linux Debian package files
+├── version/             # Version management scripts
+├── docs/                # Additional documentation
 │   ├── SETTINGS_PRIORITY.md  # Settings priority explanation
-│   ├── OOBE_IMPROVEMENTS.md  # OOBE wizard improvements
-│   └── ...
+│   └── OOBE_IMPROVEMENTS.md  # OOBE wizard notes
 ├── old/                 # Legacy code (archived)
-├── requirements.txt     # Python dependencies
 └── README.md            # This file
 ```
 
 ### Building
 
-See [BUILD.md](docs/BUILD.md) for instructions on creating standalone executables.
+See [build_scripts/README.md](build_scripts/README.md) for instructions on creating standalone executables.
 
-### Testing
+For Windows installer packages, see [windows/README.md](windows/README.md).
 
-See [TESTING.md](docs/TESTING.md) for testing instructions.
+For Linux Debian packages, see [linux/README.md](linux/README.md).
+
+### Version Management
+
+See [version/README.md](version/README.md) for version bumping scripts.
+
+```bash
+# Show current version
+./version/bump_version.sh
+
+# Bump patch/minor/major
+./version/bump_version.sh patch
+./version/bump_version.sh minor
+```
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+GNU General Public License v3 (GPL v3) - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
@@ -374,6 +390,7 @@ Contributions are welcome! Feel free to submit issues or pull requests.
 - The modular architecture allows for easy extension and customization
 - Each module is self-contained and can be developed independently
 - Use `modules/_template/` as a starting point for new modules
+- Backend-only modules (no tab) should omit `module.py` so the loader skips them
 
 ---
 
