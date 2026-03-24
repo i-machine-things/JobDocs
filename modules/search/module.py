@@ -12,9 +12,11 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
 from PyQt6.QtWidgets import (
-    QWidget, QMessageBox, QTableWidgetItem, QApplication, QMenu
+    QWidget, QMessageBox, QTableWidgetItem, QApplication, QMenu,
+    QListWidgetItem, QListWidget, QSplitter, QGroupBox, QVBoxLayout
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6 import uic
 
 from core.base_module import BaseModule
@@ -43,6 +45,7 @@ class SearchModule(BaseModule):
         self.search_blueprints_check = None
         self.mode_row_widget = None
         self.legacy_options_widget = None
+        self.folder_contents_list = None
 
     def get_name(self) -> str:
         return "Search"
@@ -82,9 +85,36 @@ class SearchModule(BaseModule):
         self.mode_row_widget = widget.mode_row_widget
         self.legacy_options_widget = widget.legacy_options_widget
 
+        # Keep criteria group compact, let results group expand
+        widget.layout().setStretchFactor(widget.searchCriteriaGroup, 0)
+        widget.layout().setStretchFactor(widget.searchResultsGroup, 1)
+
+        # Build folder contents panel and wrap table in a splitter
+        results_layout = widget.searchResultsGroup.layout()
+        results_layout.removeWidget(self.search_table)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.search_table)
+
+        folder_group = QGroupBox("Folder Contents")
+        folder_layout = QVBoxLayout()
+        folder_layout.setContentsMargins(5, 5, 5, 5)
+        self.folder_contents_list = QListWidget()
+        self.folder_contents_list.setAlternatingRowColors(True)
+        folder_layout.addWidget(self.folder_contents_list)
+        folder_group.setLayout(folder_layout)
+        splitter.addWidget(folder_group)
+
+        splitter.setSizes([400, 200])
+        results_layout.insertWidget(0, splitter)
+        results_layout.setStretchFactor(splitter, 1)
+
         # Setup table properties
         self.search_table.horizontalHeader().setStretchLastSection(True)
         self.search_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+
+        # Setup folder contents list
+        self.folder_contents_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
         # Hide progress bar initially
         self.search_progress.hide()
@@ -97,6 +127,11 @@ class SearchModule(BaseModule):
         self.search_strict_radio.toggled.connect(self.update_search_field_checkboxes)
         self.search_table.customContextMenuRequested.connect(self.show_search_context_menu)
         self.search_table.doubleClicked.connect(self.open_selected_search_job)
+        self.search_table.itemSelectionChanged.connect(
+            lambda: self._on_result_selected(self.search_table.currentRow())
+        )
+        self.folder_contents_list.doubleClicked.connect(self._open_folder_file)
+        self.folder_contents_list.customContextMenuRequested.connect(self._show_file_context_menu)
 
         # Initialize UI state
         self.update_legacy_mode_ui()
@@ -385,6 +420,7 @@ class SearchModule(BaseModule):
         self.search_edit.clear()
         self.search_table.setRowCount(0)
         self.search_results.clear()
+        self.folder_contents_list.clear()
         self.search_status_label.setText("")
 
     # ==================== Helper Methods ====================
@@ -455,6 +491,137 @@ class SearchModule(BaseModule):
             path = self.search_results[row]['path']
             QApplication.clipboard().setText(path)
             self.search_status_label.setText("Path copied to clipboard")
+
+
+    # ==================== Folder Contents Panel ====================
+
+    def _on_result_selected(self, row: int):
+        """Populate folder contents list when a search result row is selected"""
+        self.folder_contents_list.clear()
+        if row < 0 or row >= len(self.search_results):
+            return
+
+        path = self.search_results[row]['path']
+        if not os.path.exists(path):
+            item = QListWidgetItem("(folder not found)")
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self.folder_contents_list.addItem(item)
+            return
+
+        try:
+            entries = sorted(os.listdir(path), key=lambda n: (os.path.isdir(os.path.join(path, n)), n.lower()))
+        except OSError:
+            return
+
+        for name in entries:
+            full_path = os.path.join(path, name)
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, full_path)
+            if os.path.isdir(full_path):
+                item.setText(f"[{name}]")
+            self.folder_contents_list.addItem(item)
+
+    def _open_folder_file(self):
+        """Open the double-clicked file or folder from the contents list"""
+        item = self.folder_contents_list.currentItem()
+        if item is None:
+            return
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if path and os.path.exists(path):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def _show_file_context_menu(self, pos):
+        """Context menu for the folder contents list"""
+        item = self.folder_contents_list.itemAt(pos)
+        if item is None:
+            return
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if not path:
+            return
+
+        is_file = os.path.isfile(path)
+
+        menu = QMenu(self._widget)
+        open_action = menu.addAction("Open")
+        open_action.triggered.connect(self._open_folder_file)
+
+        copy_action = menu.addAction("Copy Path")
+        copy_action.triggered.connect(lambda: QApplication.clipboard().setText(path))
+
+        menu.addSeparator()
+
+        if is_file:
+            link_action = menu.addAction("Hard Link to Blueprints Folder")
+            link_action.triggered.connect(lambda: self._hard_link_to_blueprints(path))
+
+        copy_bp_action = menu.addAction("Copy Blueprints Path")
+        copy_bp_action.triggered.connect(lambda: self._copy_blueprints_path(path))
+
+        menu.exec(self.folder_contents_list.viewport().mapToGlobal(pos))
+
+    def _get_customer_bp_info(self):
+        """Return (customer_name, blueprints_dir) for the currently selected search result."""
+        row = self.search_table.currentRow()
+        if row < 0 or row >= len(self.search_results):
+            return None, None
+
+        raw_customer = self.search_results[row]['customer']
+        for prefix in ('[ITAR] ', '[ITAR-BP] ', '[BP] ', '[IR] '):
+            raw_customer = raw_customer.replace(prefix, '')
+        customer = raw_customer.strip()
+        if not customer:
+            return None, None
+
+        is_itar = '[ITAR]' in self.search_results[row]['customer']
+        bp_dir = self.app_context.get_setting(
+            'itar_blueprints_dir' if is_itar else 'blueprints_dir', ''
+        )
+        return customer, bp_dir or None
+
+    def _hard_link_to_blueprints(self, source_path: str):
+        """Create a hard link of source_path in the customer's blueprints folder"""
+        customer, bp_dir = self._get_customer_bp_info()
+        if not customer or not bp_dir:
+            self.show_error("Error", "Blueprints directory not configured or no job selected")
+            return
+
+        filename = os.path.basename(source_path)
+        dest_dir = os.path.join(bp_dir, customer)
+        dest_path = os.path.join(dest_dir, filename)
+
+        if os.path.exists(dest_path):
+            self.show_error(
+                "File Already Exists",
+                f"'{filename}' already exists in the blueprints folder:\n{dest_path}"
+            )
+            return
+
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+            os.link(source_path, dest_path)
+            self.search_status_label.setText(f"Hard linked '{filename}' to blueprints folder")
+        except OSError as e:
+            self.show_error("Hard Link Failed", str(e))
+
+    def _copy_blueprints_path(self, file_path: str):
+        """Copy the blueprints folder path for this file to clipboard"""
+        customer, bp_dir = self._get_customer_bp_info()
+        if not customer or not bp_dir:
+            self.show_error("Error", "Blueprints directory not configured or no job selected")
+            return
+
+        filename = os.path.basename(file_path)
+        bp_path = os.path.join(bp_dir, customer, filename)
+
+        if not os.path.exists(bp_path):
+            self.show_error(
+                "Not in Blueprints Folder",
+                f"'{filename}' does not exist in the blueprints folder:\n{bp_path}"
+            )
+            return
+
+        QApplication.clipboard().setText(bp_path)
+        self.search_status_label.setText("Blueprints path copied to clipboard")
 
     def cleanup(self):
         """Cleanup resources"""
