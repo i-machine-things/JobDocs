@@ -80,10 +80,12 @@ When a pull request is open or being prepared:
 - Always open PRs via `gh pr create` — never merge directly to `master` without a PR.
 - After CodeRabbit submits its review, read the review comments before making any further changes.
 - For each CodeRabbit finding:
-  1. If it matches an existing `.claude/S&P.md` entry — fix it immediately and reference the S&P entry in the commit message.
-  2. If it is a new pattern — fix it, then append it to `.claude/S&P.md` in the standard format before committing.
-- Do not dismiss or ignore CodeRabbit nitpicks — log them to `.claude/S&P.md` even if not immediately actionable.
+  1. **Make the fix immediately** — do not just log it and move on.
+  2. If it matches an existing `.claude/S&P.md` entry — fix it and reference the S&P entry in the commit message.
+  3. If it is a new pattern — fix it, then append it to `.claude/S&P.md` in the standard format before committing.
+- Do not dismiss or ignore CodeRabbit nitpicks — fix them and log them to `.claude/S&P.md`.
 - Only merge a PR after all blocking CodeRabbit comments are resolved.
+- When the user says CodeRabbit is done, immediately read all findings and apply all fixes before responding.
 
 ### S&P.md Entry Format
 
