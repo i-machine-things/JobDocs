@@ -541,7 +541,7 @@ class JobModule(BaseModule):
                         self.job_files_list.addItem(os.path.basename(file_path))
                         files_added += 1
                 if files_added > 0:
-                    self.log_message(f"Linked {files_added} drawing(s)/report(s)")
+                    self.log_message(f"Linked {files_added} drawing(s)")
 
     def _copy_info_from_folder(self, folder_path: str):
         """Copy job/quote info from folder to form, including optional file copy"""
