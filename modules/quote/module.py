@@ -494,7 +494,7 @@ class QuoteModule(BaseModule):
                 self._copy_info_from_folder(folder_path)
 
     def show_link_drawings_dialog(self):
-        """Show dialog to search and link existing drawings/inspection reports by drawing number"""
+        """Show dialog to search and link existing drawings by drawing number"""
         dialog = DrawingSearchDialog(self.get_widget(), self.app_context)
 
         if dialog.exec():
