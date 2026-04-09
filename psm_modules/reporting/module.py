@@ -171,7 +171,7 @@ class ReportingModule(BaseModule):
         else:
             application_path = Path(__file__).parent.parent.parent
 
-        ui_file = application_path / 'modules' / relative_path
+        ui_file = application_path / 'psm_modules' / relative_path
         if not ui_file.exists():
             raise FileNotFoundError(f"UI file not found: {ui_file}")
         return ui_file
