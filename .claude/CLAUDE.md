@@ -55,11 +55,12 @@ Rules:
 
 ## Rule 3: Report Fixer Must Never Merge to `stable`
 
-**`modules/reporting/` (Report Fixer) is a PSM-only feature. It must never be merged into `stable`.**
+**`psm_modules/reporting/` (Report Fixer) is a PSM-only feature. It must never be merged into `stable`.**
 
+- Report Fixer lives in `psm_modules/` — a top-level directory that `stable` does not have. This isolation prevents stable merges from overwriting it.
 - `stable` is the primary production branch for general use. Report Fixer does not belong there.
-- Development happens on `PSM-stable`. When changes from `PSM-stable` are candidates for `stable`, always exclude `modules/reporting/` and its PSM-only dependencies (`pandas`, `openpyxl`) from the merge.
-- If Report Fixer files are detected in a diff or staged commit targeting `stable`, **stop immediately and warn the user** before taking any action.
+- Development happens on `PSM-stable`. When changes from `PSM-stable` are candidates for `stable`, `psm_modules/` and its PSM-only dependencies (`pandas`, `openpyxl`) must never be included.
+- If any `psm_modules/` files are detected in a diff or staged commit targeting `stable`, **stop immediately and warn the user** before taking any action.
 - This rule applies regardless of how the merge is initiated (manual, cherry-pick, or automated).
 
 ---
