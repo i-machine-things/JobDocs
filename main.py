@@ -213,7 +213,8 @@ class JobDocsMainWindow(QMainWindow):
     def load_modules(self):
         """Load all modules using the module loader"""
         modules_dir = Path(__file__).parent / 'modules'
-        loader = ModuleLoader(modules_dir)
+        psm_modules_dir = Path(__file__).parent / 'psm_modules'
+        loader = ModuleLoader(modules_dir, extra_modules_dir=psm_modules_dir)
 
         try:
             # Load modules with experimental flag and disabled modules list
@@ -299,7 +300,8 @@ class JobDocsMainWindow(QMainWindow):
 
         # Discover all available modules for the settings dialog
         modules_dir = Path(__file__).parent / 'modules'
-        loader = ModuleLoader(modules_dir)
+        psm_modules_dir = Path(__file__).parent / 'psm_modules'
+        loader = ModuleLoader(modules_dir, extra_modules_dir=psm_modules_dir)
         available_module_names = loader.discover_modules()
 
         # Create list of (module_name, display_name) tuples

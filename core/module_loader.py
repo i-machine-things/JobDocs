@@ -24,16 +24,20 @@ class ModuleLoader:
     inherits from BaseModule.
     """
 
-    def __init__(self, modules_dir: Path):
+    def __init__(self, modules_dir: Path, extra_modules_dir: Path = None):
         """
         Initialize the module loader.
 
         Args:
-            modules_dir: Path to the modules directory
+            modules_dir: Path to the primary modules directory
+            extra_modules_dir: Optional additional directory to scan (e.g. psm_modules/)
         """
         self.modules_dir = modules_dir
+        self.extra_modules_dir = extra_modules_dir
         self.loaded_modules: List[BaseModule] = []
         self._module_classes: Dict[str, Type[BaseModule]] = {}
+        # Map module name -> directory it was found in
+        self._module_dirs: Dict[str, Path] = {}
 
     def discover_modules(self) -> List[str]:
         """
@@ -65,18 +69,24 @@ class ModuleLoader:
             return [m for m in all_modules if m not in deprecated_modules]
         else:
             # In development mode, discover from filesystem
-            if not self.modules_dir.exists():
-                return []
-
             module_names = []
-            for item in self.modules_dir.iterdir():
-                if item.is_dir() and not item.name.startswith('_'):
-                    # Skip deprecated modules
-                    if item.name in deprecated_modules:
-                        continue
-                    module_file = item / 'module.py'
-                    if module_file.exists():
-                        module_names.append(item.name)
+            self._module_dirs.clear()
+
+            scan_dirs = [self.modules_dir]
+            if self.extra_modules_dir and self.extra_modules_dir.exists():
+                scan_dirs.append(self.extra_modules_dir)
+
+            for scan_dir in scan_dirs:
+                if not scan_dir.exists():
+                    continue
+                for item in scan_dir.iterdir():
+                    if item.is_dir() and not item.name.startswith('_'):
+                        if item.name in deprecated_modules:
+                            continue
+                        module_file = item / 'module.py'
+                        if module_file.exists() and item.name not in self._module_dirs:
+                            module_names.append(item.name)
+                            self._module_dirs[item.name] = scan_dir
 
             return module_names
 
@@ -106,7 +116,9 @@ class ModuleLoader:
                 raise ImportError(f"Could not import frozen module {module_import_name}: {e}")
         else:
             # In development mode, load from file path
-            module_path = self.modules_dir / module_name / 'module.py'
+            # Check the directory this module was discovered in; fall back to modules_dir
+            source_dir = self._module_dirs.get(module_name, self.modules_dir)
+            module_path = source_dir / module_name / 'module.py'
 
             if not module_path.exists():
                 raise ImportError(f"Module file not found: {module_path}")
