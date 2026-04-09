@@ -56,15 +56,28 @@ if not modules_dir.exists():
     # If modules not found relative to spec, try parent directory
     modules_dir = spec_root.parent / 'modules'
 
-# PSM-only modules excluded from stable build (Rule 3: modules/reporting/ is PSM-only)
-PSM_ONLY_MODULES = {'reporting'}
-
 for module_folder in modules_dir.iterdir():
-    if module_folder.is_dir() and not module_folder.name.startswith('_') and module_folder.name not in PSM_ONLY_MODULES:
+    if module_folder.is_dir() and not module_folder.name.startswith('_'):
         ui_dir = module_folder / 'ui'
         if ui_dir.exists():
             for ui_file in ui_dir.glob('*.ui'):
                 ui_files.append((str(ui_file), f'modules/{module_folder.name}/ui'))
+
+# PSM-only modules live in psm_modules/ (Rule 3: never in stable builds).
+# Collected automatically when building from PSM-stable; skipped on stable (dir absent).
+psm_modules_dir = spec_root / 'psm_modules'
+if not psm_modules_dir.exists():
+    psm_modules_dir = spec_root.parent / 'psm_modules'
+
+psm_module_names = []
+if psm_modules_dir.exists():
+    for module_folder in psm_modules_dir.iterdir():
+        if module_folder.is_dir() and not module_folder.name.startswith('_'):
+            psm_module_names.append(module_folder.name)
+            ui_dir = module_folder / 'ui'
+            if ui_dir.exists():
+                for ui_file in ui_dir.glob('*.ui'):
+                    ui_files.append((str(ui_file), f'psm_modules/{module_folder.name}/ui'))
 
 # Collect all icon files
 iconset_dir = spec_root / 'JobDocs.iconset'
@@ -87,8 +100,13 @@ if sample_dir.exists():
         if sample_file.is_file():
             sample_files.append((str(sample_file), 'sample_files'))
 
+# Bundle psm_modules/ package itself so importlib can find it at runtime
+psm_datas = []
+if psm_modules_dir.exists():
+    psm_datas.append((str(psm_modules_dir), 'psm_modules'))
+
 # Collect all data files
-datas = ui_files + icon_files + sample_files
+datas = ui_files + icon_files + sample_files + psm_datas
 
 # Add README and LICENSE
 readme_file = spec_root / 'README.md'
@@ -148,10 +166,18 @@ hiddenimports = [
 
     # PDF preview (imported inside function body — PyInstaller won't auto-detect)
     'fitz',
-
-    # NOTE: modules.reporting, pandas, openpyxl are PSM-only (Rule 3).
-    # Include them only in a PSM-specific build spec, not here.
 ]
+
+# PSM-only hidden imports — added automatically when psm_modules/ exists (PSM builds only).
+# On stable builds psm_modules/ is absent, so this block adds nothing.
+if psm_module_names:
+    hiddenimports += [
+        'psm_modules',
+    ]
+    for _name in psm_module_names:
+        hiddenimports += [f'psm_modules.{_name}', f'psm_modules.{_name}.module']
+    # Report Fixer dependencies (pandas + openpyxl); guarded by try/except inside the module.
+    hiddenimports += ['pandas', 'openpyxl', 'openpyxl.worksheet.table', 'openpyxl.styles']
 
 # Find main.py
 main_py = spec_root / 'main.py'

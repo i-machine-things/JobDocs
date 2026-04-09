@@ -55,7 +55,6 @@ class ModuleLoader:
         if is_frozen:
             # In frozen mode, return hardcoded list of modules.
             # Must match the modules in the spec file's hiddenimports.
-            # PSM-only modules (reporting) excluded from stable builds per .claude/CLAUDE.md Rule 3.
             # Keep this list in sync with hiddenimports in build_scripts/JobDocs.spec.
             all_modules = [
                 'quote',
@@ -66,6 +65,14 @@ class ModuleLoader:
                 'import_bp',
                 'history',
             ]
+            # PSM-only modules live in psm_modules/ and are only present in PSM builds.
+            # Detect by attempting import — succeeds in PSM exe, fails in stable exe.
+            try:
+                importlib.import_module('psm_modules.reporting.module')
+                all_modules.append('reporting')
+                self._psm_modules = {'reporting'}
+            except ImportError:
+                self._psm_modules = set()
             return [m for m in all_modules if m not in deprecated_modules]
         else:
             # In development mode, discover from filesystem
@@ -108,8 +115,10 @@ class ModuleLoader:
         is_frozen = getattr(sys, 'frozen', False)
 
         if is_frozen:
-            # In frozen mode, use standard import (modules are bundled in executable)
-            module_import_name = f"modules.{module_name}.module"
+            # PSM modules use psm_modules.* import path; standard modules use modules.*
+            psm_modules = getattr(self, '_psm_modules', set())
+            pkg = 'psm_modules' if module_name in psm_modules else 'modules'
+            module_import_name = f"{pkg}.{module_name}.module"
             try:
                 module = importlib.import_module(module_import_name)
             except ImportError as e:
