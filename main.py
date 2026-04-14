@@ -43,104 +43,30 @@ class _PluginInstallWorker(QThread):
         self._plugins_dir = plugins_dir
 
     def _install_deps(self, plugin_dir: Path) -> str:
-        """Install requirements.txt into plugin_dir/deps/ using pip.
+        """Install plugin requirements into the embedded Python's site-packages.
 
-        Returns a non-empty warning string if installation failed or was skipped,
-        or '' on success / no requirements.txt present.
+        Uses sys.executable (the embedded runtime\python.exe in a release build,
+        or the dev Python when running from source). Returns a non-empty warning
+        string on failure, or '' on success / no requirements.txt present.
         """
         req_file = plugin_dir / 'requirements.txt'
         if not req_file.exists():
             return ''
 
-        # Shared addon packages dir — all plugins install here so packages
-        # like pandas are not duplicated when multiple plugins need them.
-        deps_dir = get_config_dir() / 'AddonPackages'
-
-        # Install into a temp dir then swap atomically to avoid leaving deps_dir
-        # in a partial state if the install fails mid-way.
-        tmp_deps = deps_dir.with_name('AddonPackages.tmp')
         try:
-            if tmp_deps.exists():
-                shutil.rmtree(tmp_deps)
-            tmp_deps.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            return f"\n\nCould not create temp deps directory: {e}"
-
-        # Fix CR: in frozen mode try the bundled pip API first so wheels are
-        # resolved against the bundled Python ABI, not a system Python that may
-        # differ. Fall back to system Python names only after that attempt fails.
-        last_err = ''
-        installed = False
-
-        if getattr(sys, 'frozen', False):
-            try:
-                from pip._internal.cli.main import main as _pip_main  # type: ignore[import]
-                args = ['install', '--target', str(tmp_deps), '-r', str(req_file)]
-                rc = _pip_main(args)
-                installed = (rc == 0)
-                if not installed:
-                    last_err = f'pip internal API exited with code {rc}'
-            except SystemExit as exc:
-                installed = (exc.code or 0) == 0
-                if not installed:
-                    last_err = f'pip internal API exited with code {exc.code}'
-            except Exception as exc:
-                last_err = str(exc)
-
-        if not installed:
-            candidates = []
-            if not getattr(sys, 'frozen', False):
-                candidates.append(sys.executable)
-            candidates.extend(['python', 'python3', 'py'])
-
-            for python in candidates:
-                try:
-                    result = subprocess.run(
-                        [python, '-m', 'pip', 'install',
-                         '--target', str(tmp_deps),
-                         '-r', str(req_file)],
-                        capture_output=True, text=True, timeout=120,
-                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-                    )
-                    if result.returncode == 0:
-                        installed = True
-                        break
-                    last_err = (result.stderr or result.stdout).strip()
-                except FileNotFoundError:
-                    continue
-                except subprocess.TimeoutExpired:
-                    last_err = 'pip install timed out after 120 s'
-                    break
-
-        if not installed:
-            shutil.rmtree(tmp_deps, ignore_errors=True)
-            return (
-                f"\n\nPlugin installed, but dependencies could not be installed automatically.\n"
-                f"Run manually: pip install --target \"{deps_dir}\" -r \"{req_file}\"\n\n"
-                f"Error: {last_err or 'no usable Python found on PATH'}"
+            result = subprocess.run(
+                [sys.executable, '-m', 'pip', 'install',
+                 '--no-warn-script-location', '-r', str(req_file)],
+                capture_output=True, text=True, timeout=300,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
             )
-
-        # Atomically swap temp dir into place (backup-then-swap).
-        backup = deps_dir.with_name('deps.bak')
-        try:
-            if backup.exists():
-                shutil.rmtree(backup)
-            if deps_dir.exists():
-                deps_dir.rename(backup)
-            tmp_deps.rename(deps_dir)
-            if backup.exists():
-                shutil.rmtree(backup)
-        except Exception:
-            if tmp_deps.exists() and not deps_dir.exists():
-                try:
-                    tmp_deps.rename(deps_dir)
-                except Exception:
-                    pass
-            if backup.exists() and not deps_dir.exists():
-                backup.rename(deps_dir)
-            raise
-
-        return ''
+            if result.returncode == 0:
+                return ''
+            err = (result.stderr or result.stdout).strip()
+            return (f"\n\nDependency installation failed.\n"
+                    f"Run manually: pip install -r \"{req_file}\"\n\nError: {err}")
+        except Exception as exc:
+            return f"\n\nDependency installation failed: {exc}"
 
     def run(self):
         owner, repo = self._owner, self._repo
@@ -443,7 +369,13 @@ class JobDocsMainWindow(QMainWindow):
 
     def _set_window_icon(self):
         """Set application window icon from bundled or filesystem icon."""
-        base = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
+        # PyInstaller frozen: data files land in sys._MEIPASS.
+        # Embedded Python: icon is staged into app/ alongside main.py.
+        # Dev: same directory as main.py.
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).resolve().parent
         candidates = [
             base / 'windows' / 'icon.ico',
             base / 'JobDocs.iconset' / 'icon_256x256.png',
@@ -456,10 +388,21 @@ class JobDocsMainWindow(QMainWindow):
     # ==================== Module Loading ====================
 
     def _get_plugins_dir(self) -> Path:
-        """Return the fixed plugins directory alongside the executable (or repo root in dev)."""
-        if getattr(sys, 'frozen', False):
-            return Path(sys.executable).parent / 'plugins'
-        return Path(__file__).parent / 'plugins'
+        """Return the plugins directory.
+
+        Embedded install layout:
+            {app}/app/main.py   ← __file__
+            {app}/runtime/      ← signals we're in an embedded install
+            {app}/plugins/      ← plugins live here
+
+        Dev / source layout:
+            repo/main.py
+            repo/plugins/       ← plugins live here
+        """
+        app_dir = Path(__file__).resolve().parent
+        if (app_dir.parent / 'runtime').is_dir():
+            return app_dir.parent / 'plugins'
+        return app_dir / 'plugins'
 
     def load_modules(self):
         """Load all modules using the module loader"""
@@ -839,14 +782,6 @@ Search across all customers and jobs.</p>
 
 def main():
     """Main application entry point"""
-    # Prepend the shared addon packages directory to sys.path so plugin
-    # dependencies installed there are importable before any modules load.
-    addon_packages = get_config_dir() / 'AddonPackages'
-    if addon_packages.exists():
-        addon_str = str(addon_packages)
-        if addon_str not in sys.path:
-            sys.path.insert(0, addon_str)
-
     # Set AppUserModelID so Windows can pin this to the taskbar
     try:
         import ctypes
