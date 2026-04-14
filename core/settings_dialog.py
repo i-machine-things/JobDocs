@@ -10,7 +10,7 @@ Provides a UI for configuring application settings including:
 """
 
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Callable, Dict, List, Optional
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -26,8 +26,9 @@ from shared.utils import get_os_type, get_os_text
 class SettingsDialog(QDialog):
     """Settings dialog"""
 
-    def __init__(self, settings: Dict[str, Any], parent=None, available_modules: List[tuple] = None,
-                 save_callback=None):
+    def __init__(self, settings: Dict[str, Any], parent=None,
+                 available_modules: Optional[List[tuple]] = None,
+                 save_callback: Optional[Callable[..., Any]] = None):
         super().__init__(parent)
         self.settings = settings.copy()
         self.available_modules = available_modules or []  # List of (module_name, display_name) tuples
