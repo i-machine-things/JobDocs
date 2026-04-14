@@ -4077,3 +4077,247 @@ Reviewing files that changed from the base of the PR and between 09700c52e8b62d3
 3. **Frozen mode: try bundled pip before system Python**
    - System Python may have a different ABI than the bundled Python, causing binary wheels to be incompatible.
    - Fix applied: in frozen mode, attempt `pip._internal.cli.main` first; fall back to `python`/`py` on PATH only after that fails.
+
+---
+
+## 2026-04-14 — `PR #20: build: replace PyInstaller with embedded Python for Windows` — review run 1
+
+**Actionable comments posted: 4**
+
+<details>
+<summary>🧹 Nitpick comments (3)</summary><blockquote>
+
+<details>
+<summary>.gitignore (1)</summary><blockquote>
+
+`54-54`: **Consider anchoring `AddonPackages/` to repo root.**
+
+If this is only meant for the root-level dev symlink, use `/AddonPackages/` to avoid unintentionally ignoring same-named nested directories.  
+
+<details>
+<summary>Diff suggestion</summary>
+
+```diff
+-AddonPackages/
++/AddonPackages/
+```
+</details>
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In @.gitignore at line 54, The .gitignore entry "AddonPackages/" should be
+anchored to the repository root to avoid ignoring same-named nested directories;
+replace "AddonPackages/" with "/AddonPackages/" (i.e., update the AddonPackages/
+pattern to start with a leading slash) so it only ignores the root-level dev
+symlink.
+```
+
+</details>
+
+</blockquote></details>
+<details>
+<summary>build_scripts/JobDocs.spec (1)</summary><blockquote>
+
+`156-166`: **Refresh this note to match the current plugin install model.**
+
+This block still describes the removed `deps/` + `sys.path` flow, but `main.py` now shells out to `python -m pip install -r ...` into the active environment. Leaving the old description here will send the next person debugging packaging down the wrong path.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@build_scripts/JobDocs.spec` around lines 156 - 166, Update the comment block
+that currently references the removed "deps/" folder and "sys.path" manipulation
+to reflect the new plugin install model: replace the description about plugins
+managing deps in a deps/ subfolder and the module loader prepending sys.path
+with a note that main.py now shells out to "python -m pip install -r
+<requirements.txt>" into the active environment (i.e., installs into the running
+Python environment), and remove or reword any instructions that suggest using
+pip --target deps/ or modifying sys.path so future debuggers are directed to
+check main.py's shell-out install behavior instead.
+```
+
+</details>
+
+</blockquote></details>
+<details>
+<summary>launcher/launcher.rc (1)</summary><blockquote>
+
+`11-12`: **Drive the EXE version metadata from the build, not a literal.**
+
+The installer version already comes from `RELEASE_VERSION`, but the launcher resource is pinned to `0.6.0.0`. The next tag will ship an EXE whose file properties disagree with the installer and release asset name unless this is updated by hand. 
+
+
+Also applies to: 25-30
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@launcher/launcher.rc` around lines 11 - 12, The FILEVERSION and
+PRODUCTVERSION entries in launcher.rc are hard-coded to 0,6,0,0; change
+launcher.rc to derive these values from the build/release variables (e.g.,
+RELEASE_VERSION or build-time VERSION macros) instead of literals so the EXE
+metadata matches the installer and release tag—replace the numeric literals used
+in FILEVERSION and PRODUCTVERSION (and the corresponding version strings around
+lines 25-30) with preprocessor-expanded tokens or injected variables (e.g.,
+VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_BUILD or a single
+RELEASE_VERSION split into components) so the resource gets populated at build
+time.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Inline comments:
+In @.github/workflows/build-release.yml:
+- Around line 48-65: The workflow currently downloads the Python embeddable ZIP
+and a floating get-pip.py without verification; update the three steps
+("Download Python embeddable", "Enable site-packages in embedded Python",
+"Bootstrap pip into embedded Python") to validate payloads before use by pinning
+expected hashes and failing on mismatch: add variables for the expected SHA256
+for the embeddable ZIP and for get-pip.py, after Invoke-WebRequest compute
+Get-FileHash on the downloaded files and compare to the pinned values (fail/exit
+when they differ), or alternatively vendor the get-pip.py into the repo and
+reference it instead of fetching, and only then run Expand-Archive and
+runtime\python.exe get-pip.py; ensure the workflow treats any checksum mismatch
+as a hard error so release artifacts never use unverified remote payloads.
+- Around line 71-80: The staging step omits README.md so show_readme() (which
+expects README.md next to main.py) will fail in the packaged app; update the
+$src_items array in the "Stage app source tree" PowerShell step to include
+'README.md' alongside 'main.py','core','modules','shared', etc., so README.md is
+copied into the app directory during the build.
+
+In `@launcher/launcher.c`:
+- Around line 51-66: CreateProcessW is currently called but its BOOL return
+value isn't checked, so failures are swallowed and CloseHandle is
+unconditionally called on possibly invalid handles; update the code around
+CreateProcessW to capture its return (e.g., BOOL created = CreateProcessW(...)),
+if created == FALSE call GetLastError(), format or include that error code/text
+and show a user-visible error (e.g., MessageBoxW with a descriptive message
+referencing python/cmdline/exe_path) and return non-zero (e.g., return 1); only
+call CloseHandle on pi.hProcess and pi.hThread when they are valid
+(non-NULL/INVALID_HANDLE_VALUE) to avoid closing invalid handles. Ensure you
+reference CreateProcessW, pi, si, python, cmdline, and exe_path when
+implementing the checks and message.
+
+In `@main.py`:
+- Around line 45-69: The packaged Flatpak build writes plugins under a read-only
+/app so pip installs from _install_deps will fail; update either
+_get_plugins_dir or _install_deps to avoid attempting installs into /app: detect
+Flatpak (e.g., via os.getenv('FLATPAK_ID') or by checking if plugin_dir is under
+'/app' or not writable) and then (a) return a per-user writable path (use
+XDG_DATA_HOME or "~/.var/app/<FLATPAK_ID>/plugins") from _get_plugins_dir, or
+(b) in _install_deps short-circuit and return a clear non-empty warning string
+when plugin_dir is not writable/read-only so pip is not invoked. Reference the
+_get_plugins_dir and _install_deps functions when making the change.
+
+---
+
+Nitpick comments:
+In @.gitignore:
+- Line 54: The .gitignore entry "AddonPackages/" should be anchored to the
+repository root to avoid ignoring same-named nested directories; replace
+"AddonPackages/" with "/AddonPackages/" (i.e., update the AddonPackages/ pattern
+to start with a leading slash) so it only ignores the root-level dev symlink.
+
+In `@build_scripts/JobDocs.spec`:
+- Around line 156-166: Update the comment block that currently references the
+removed "deps/" folder and "sys.path" manipulation to reflect the new plugin
+install model: replace the description about plugins managing deps in a deps/
+subfolder and the module loader prepending sys.path with a note that main.py now
+shells out to "python -m pip install -r <requirements.txt>" into the active
+environment (i.e., installs into the running Python environment), and remove or
+reword any instructions that suggest using pip --target deps/ or modifying
+sys.path so future debuggers are directed to check main.py's shell-out install
+behavior instead.
+
+In `@launcher/launcher.rc`:
+- Around line 11-12: The FILEVERSION and PRODUCTVERSION entries in launcher.rc
+are hard-coded to 0,6,0,0; change launcher.rc to derive these values from the
+build/release variables (e.g., RELEASE_VERSION or build-time VERSION macros)
+instead of literals so the EXE metadata matches the installer and release
+tag—replace the numeric literals used in FILEVERSION and PRODUCTVERSION (and the
+corresponding version strings around lines 25-30) with preprocessor-expanded
+tokens or injected variables (e.g., VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH,
+VERSION_BUILD or a single RELEASE_VERSION split into components) so the resource
+gets populated at build time.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix (Beta)</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {"checkboxId": "4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9"} --> Push a commit to this branch (recommended)
+- [ ] <!-- {"checkboxId": "ff5b1114-7d8c-49e6-8ac1-43f82af23a33"} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `0a409c05-78dd-4c0c-b826-fd7a77d7ea94`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 09700c52e8b62d3c6ea0ded20e7f767f2741e370 and 0497fc59fac356810658f46cc56a54a059f686f6.
+
+</details>
+
+<details>
+<summary>⛔ Files ignored due to path filters (1)</summary>
+
+* `.claude/S&P.md` is excluded by `!.claude/S&P.md`
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (7)</summary>
+
+* `.github/workflows/build-release.yml`
+* `.gitignore`
+* `build_scripts/JobDocs.iss`
+* `build_scripts/JobDocs.spec`
+* `launcher/launcher.c`
+* `launcher/launcher.rc`
+* `main.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
