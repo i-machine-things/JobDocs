@@ -157,12 +157,14 @@ hiddenimports = [
 
 # Third-party packages required by plugins (e.g. jobdocs-report-fixer uses pandas + openpyxl).
 #
-# Architectural note: ideally plugin dependencies would be self-contained within each plugin
-# (e.g. a deps/ subfolder added to sys.path by the plugin loader). However, PyInstaller
-# performs static analysis at build time and cannot discover imports made by plugins that
-# are loaded dynamically at runtime — there is no pip inside the bundled exe to install
-# anything after the fact. Until a per-plugin deps/ system is implemented, shared plugin
-# dependencies must be declared here so PyInstaller includes them in the bundle.
+# Architectural note: because this is a onedir build, pure-Python plugin dependencies
+# could in principle live in a plugin's own deps/ subfolder (added to sys.path by the
+# plugin loader before exec_module). However, pandas contains compiled .pyd extensions
+# that must exactly match the Python version bundled by PyInstaller — they cannot be
+# shipped portably alongside a plugin. pandas must therefore be declared here so
+# PyInstaller includes the correct pre-compiled binaries in the bundle.
+# openpyxl is included here for the same reason as pandas (consistency and to avoid
+# a split deps model until a proper per-plugin deps/ system is implemented).
 hiddenimports += collect_submodules('pandas')
 hiddenimports += collect_submodules('openpyxl')
 datas += collect_data_files('pandas')
