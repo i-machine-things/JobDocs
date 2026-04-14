@@ -3965,3 +3965,93 @@ Reviewing files that changed from the base of the PR and between ce304ec214964c6
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-14 — `PR #19: fix: isolate plugin deps into plugin-local deps/ directory` — review run 1
+
+**Actionable comments posted: 4**
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Inline comments:
+In `@main.py`:
+- Around line 55-57: The current creation of deps_dir and subsequent pip install
+into that path (variable deps_dir) can leave stale/partial packages; change the
+flow to create a fresh temporary directory (e.g., temp_deps_dir), run pip
+install --target into that temp directory, verify success, then atomically
+replace/move temp_deps_dir to deps_dir (remove or backup existing deps_dir only
+after successful install) to avoid overlaying and leftover files—apply the same
+pattern for the other install sites referenced around the blocks using deps_dir
+(lines noted 72-77 and 91-92) so installs are always performed into a clean temp
+folder and swapped into place on success.
+- Around line 103-106: The returned error message omits the --target flag so
+users run pip globally; update the string construction that returns the manual
+recovery command to include the plugin-local target by adding --target
+"{deps_dir}" (use the existing deps_dir variable alongside req_file and
+last_err) so the suggested command is pip install --target "{deps_dir}" -r
+"{req_file}" and preserve the existing error text fallback (last_err or 'no
+usable Python found on PATH').
+- Around line 61-67: When sys.frozen is true the code currently appends system
+Python names into candidates before ever trying the embedded pip, causing wheels
+to be chosen for the system ABI; change the candidates construction so that when
+getattr(sys, 'frozen', False) is True you try the bundled pip API
+(pip._internal) first and only then extend with ['python','python3','py'] as a
+last resort—i.e., ensure the candidates list contains a pip._internal attempt
+first in frozen mode and falls back to the system Python names otherwise.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix (Beta)</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {"checkboxId": "4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9"} --> Push a commit to this branch (recommended)
+- [ ] <!-- {"checkboxId": "ff5b1114-7d8c-49e6-8ac1-43f82af23a33"} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `564b50cc-67cd-49b3-b031-57621bf81fa5`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 09700c52e8b62d3c6ea0ded20e7f767f2741e370 and f00a384bba3632eca3a8fda3be7bb02ee247a6d7.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (4)</summary>
+
+* `.gitignore`
+* `build_scripts/JobDocs.spec`
+* `core/module_loader.py`
+* `main.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
