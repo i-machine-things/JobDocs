@@ -187,6 +187,12 @@ a = Analysis(
         'PIL',
         'IPython',
         'jupyter',
+
+        # PyMuPDF's pymupdf.table optionally imports pandas for table detection;
+        # we only use fitz for page rendering so exclude it to keep plugin deps
+        # out of the main bundle (plugins install their own deps/ at runtime).
+        'pandas',
+        'openpyxl',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
