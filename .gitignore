@@ -48,8 +48,9 @@ Thumbs.db
 test_output/
 old/
 
-# Plugin-installed dependencies (managed at runtime, not checked in)
-plugins/*/deps/
+# Shared addon packages dir (managed at runtime via pip, not checked in)
+# Lives in %LOCALAPPDATA%\JobDocs\AddonPackages\ — dev symlink if present
+AddonPackages/
 
 # Flatpak — staged binary and icon (copied from build_dist/ by CI, not source files)
 linux/flatpak/JobDocs

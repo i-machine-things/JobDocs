@@ -52,11 +52,13 @@ class _PluginInstallWorker(QThread):
         if not req_file.exists():
             return ''
 
-        deps_dir = plugin_dir / 'deps'
+        # Shared addon packages dir — all plugins install here so packages
+        # like pandas are not duplicated when multiple plugins need them.
+        deps_dir = get_config_dir() / 'AddonPackages'
 
         # Install into a temp dir then swap atomically to avoid leaving deps_dir
         # in a partial state if the install fails mid-way.
-        tmp_deps = deps_dir.with_name('deps.tmp')
+        tmp_deps = deps_dir.with_name('AddonPackages.tmp')
         try:
             if tmp_deps.exists():
                 shutil.rmtree(tmp_deps)
@@ -836,6 +838,14 @@ Search across all customers and jobs.</p>
 
 def main():
     """Main application entry point"""
+    # Prepend the shared addon packages directory to sys.path so plugin
+    # dependencies installed there are importable before any modules load.
+    addon_packages = get_config_dir() / 'AddonPackages'
+    if addon_packages.exists():
+        addon_str = str(addon_packages)
+        if addon_str not in sys.path:
+            sys.path.insert(0, addon_str)
+
     # Set AppUserModelID so Windows can pin this to the taskbar
     try:
         import ctypes
