@@ -58,8 +58,9 @@ class _PluginInstallWorker(QThread):
         except OSError as e:
             return f"\n\nCould not create deps directory: {e}"
 
-        # Try to find a usable Python. In dev mode sys.executable is Python.
-        # In a frozen build it is the exe itself, so fall back to system Python.
+        # In dev mode sys.executable is Python, so try it first.
+        # In a frozen build it is the exe itself; fall back to system Python,
+        # then to pip's own internal API (bundled with Python/the frozen exe).
         candidates = []
         if not getattr(sys, 'frozen', False):
             candidates.append(sys.executable)
@@ -82,6 +83,22 @@ class _PluginInstallWorker(QThread):
             except subprocess.TimeoutExpired:
                 last_err = 'pip install timed out after 120 s'
                 break
+
+        # Last resort: call pip's internal API directly (works in frozen builds
+        # where no system Python is on PATH, since pip ships with Python).
+        try:
+            from pip._internal.cli.main import main as _pip_main  # type: ignore[import]
+            args = ['install', '--target', str(deps_dir), '-r', str(req_file)]
+            rc = _pip_main(args)
+            if rc == 0:
+                return ''
+            last_err = f'pip internal API exited with code {rc}'
+        except SystemExit as exc:
+            if (exc.code or 0) == 0:
+                return ''
+            last_err = f'pip internal API exited with code {exc.code}'
+        except Exception as exc:
+            last_err = str(exc)
 
         return (
             f"\n\nPlugin installed, but dependencies could not be installed automatically.\n"

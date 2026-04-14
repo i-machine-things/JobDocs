@@ -152,6 +152,11 @@ hiddenimports = [
 
     # stdlib modules used by dynamically-loaded plugins (not reachable via static analysis)
     'difflib',
+
+    # pip internal API — used by the plugin installer to install plugin deps at
+    # runtime without requiring a separate Python installation on the user's machine.
+    'pip',
+    'pip._internal.cli.main',
 ]
 
 # Plugin dependencies are NOT bundled here.
