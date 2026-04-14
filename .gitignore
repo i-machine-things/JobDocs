@@ -48,6 +48,9 @@ Thumbs.db
 test_output/
 old/
 
+# Plugin-installed dependencies (managed at runtime, not checked in)
+plugins/*/deps/
+
 # Flatpak — staged binary and icon (copied from build_dist/ by CI, not source files)
 linux/flatpak/JobDocs
 linux/flatpak/icon_256x256.png

@@ -13,7 +13,6 @@ Usage:
 Generated executable will be in the dist/ directory (or custom path if specified).
 """
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 import os
 from pathlib import Path
 
@@ -155,19 +154,11 @@ hiddenimports = [
     'difflib',
 ]
 
-# Third-party packages required by plugins (e.g. jobdocs-report-fixer uses pandas + openpyxl).
-#
-# Architectural note: because this is a onedir build, pure-Python plugin dependencies
-# could in principle live in a plugin's own deps/ subfolder (added to sys.path by the
-# plugin loader before exec_module). However, pandas contains compiled .pyd extensions
-# that must exactly match the Python version bundled by PyInstaller — they cannot be
-# shipped portably alongside a plugin. pandas must therefore be declared here so
-# PyInstaller includes the correct pre-compiled binaries in the bundle.
-# openpyxl is included here for the same reason as pandas (consistency and to avoid
-# a split deps model until a proper per-plugin deps/ system is implemented).
-hiddenimports += collect_submodules('pandas')
-hiddenimports += collect_submodules('openpyxl')
-datas += collect_data_files('pandas')
+# Plugin dependencies are NOT bundled here.
+# Each plugin manages its own deps in a deps/ subfolder next to its module.py.
+# The module loader prepends that folder to sys.path before exec_module so the
+# plugin can import normally. The plugin installer (main.py) runs pip install
+# --target deps/ from the plugin's requirements.txt at install time.
 
 # Find main.py
 main_py = spec_root / 'main.py'

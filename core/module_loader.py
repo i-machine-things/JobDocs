@@ -150,6 +150,14 @@ class ModuleLoader:
             if not module_path.exists():
                 raise ImportError(f"Plugin module file not found: {module_path}")
 
+            # Prepend the plugin's deps/ directory to sys.path so that packages
+            # installed there (via pip install --target) are importable.
+            deps_dir = module_path.parent / 'deps'
+            if deps_dir.exists():
+                deps_str = str(deps_dir)
+                if deps_str not in sys.path:
+                    sys.path.insert(0, deps_str)
+
             # Register a parent package entry so relative imports (e.g. `from .helpers`)
             # inside the plugin resolve correctly.
             package_name = f"plugins.{module_name}"

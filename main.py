@@ -7,6 +7,7 @@ Main application entry point using the modular plugin architecture.
 
 import io
 import shutil
+import subprocess
 import sys
 import json
 import tempfile
@@ -32,7 +33,7 @@ from shared.remote_sync import RemoteSyncManager
 class _PluginInstallWorker(QThread):
     """Background worker that downloads and extracts a GitHub plugin."""
 
-    success = pyqtSignal(str, str)  # module_name, dest_path
+    success = pyqtSignal(str, str, str)  # module_name, dest_path, dep_warning
     error = pyqtSignal(str)
 
     def __init__(self, owner: str, repo: str, plugins_dir: Path):
@@ -40,6 +41,53 @@ class _PluginInstallWorker(QThread):
         self._owner = owner
         self._repo = repo
         self._plugins_dir = plugins_dir
+
+    def _install_deps(self, plugin_dir: Path) -> str:
+        """Install requirements.txt into plugin_dir/deps/ using pip.
+
+        Returns a non-empty warning string if installation failed or was skipped,
+        or '' on success / no requirements.txt present.
+        """
+        req_file = plugin_dir / 'requirements.txt'
+        if not req_file.exists():
+            return ''
+
+        deps_dir = plugin_dir / 'deps'
+        try:
+            deps_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return f"\n\nCould not create deps directory: {e}"
+
+        # Try to find a usable Python. In dev mode sys.executable is Python.
+        # In a frozen build it is the exe itself, so fall back to system Python.
+        candidates = []
+        if not getattr(sys, 'frozen', False):
+            candidates.append(sys.executable)
+        candidates.extend(['python', 'python3', 'py'])
+
+        last_err = ''
+        for python in candidates:
+            try:
+                result = subprocess.run(
+                    [python, '-m', 'pip', 'install',
+                     '--target', str(deps_dir),
+                     '-r', str(req_file)],
+                    capture_output=True, text=True, timeout=120,
+                )
+                if result.returncode == 0:
+                    return ''
+                last_err = (result.stderr or result.stdout).strip()
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                last_err = 'pip install timed out after 120 s'
+                break
+
+        return (
+            f"\n\nPlugin installed, but dependencies could not be installed automatically.\n"
+            f"Run manually: pip install -r \"{req_file}\"\n\n"
+            f"Error: {last_err or 'no usable Python found on PATH'}"
+        )
 
     def run(self):
         owner, repo = self._owner, self._repo
@@ -129,7 +177,8 @@ class _PluginInstallWorker(QThread):
                                 backup_dest.rename(dest)
                             raise
 
-                self.success.emit(module_name, str(dest))
+                dep_warning = self._install_deps(dest)
+                self.success.emit(module_name, str(dest), dep_warning)
                 return
 
             except urllib.error.HTTPError as e:
@@ -509,16 +558,17 @@ class JobDocsMainWindow(QMainWindow):
         plugins_dir = self._get_plugins_dir()
 
         worker = _PluginInstallWorker(owner, repo, plugins_dir)
-        worker.success.connect(lambda name, dest: self._on_plugin_install_success(name, dest, worker))
+        worker.success.connect(lambda name, dest, warn: self._on_plugin_install_success(name, dest, warn, worker))
         worker.error.connect(lambda msg: self._on_plugin_install_error(msg, worker))
         self._install_worker = worker  # prevent GC while running
         worker.start()
 
-    def _on_plugin_install_success(self, module_name: str, dest: str, worker: _PluginInstallWorker):
-        QMessageBox.information(
-            self, "Plugin Installed",
-            f"Plugin '{module_name}' installed to:\n{dest}\n\nRestart JobDocs to load it."
-        )
+    def _on_plugin_install_success(self, module_name: str, dest: str, dep_warning: str, worker: _PluginInstallWorker):
+        msg = f"Plugin '{module_name}' installed to:\n{dest}\n\nRestart JobDocs to load it."
+        if dep_warning:
+            QMessageBox.warning(self, "Plugin Installed", msg + dep_warning)
+        else:
+            QMessageBox.information(self, "Plugin Installed", msg)
         worker.deleteLater()
 
     def _on_plugin_install_error(self, message: str, worker: _PluginInstallWorker):
