@@ -153,10 +153,13 @@ hiddenimports = [
 
     # stdlib modules used by dynamically-loaded plugins (not reachable via static analysis)
     'difflib',
-
-    # NOTE: modules.reporting, pandas, openpyxl are PSM-only (Rule 3).
-    # Include them only in a PSM-specific build spec, not here.
 ]
+
+# Third-party packages required by plugins (e.g. jobdocs-report-fixer uses pandas + openpyxl).
+# collect_submodules is needed because PyInstaller cannot trace dynamic imports inside plugins.
+hiddenimports += collect_submodules('pandas')
+hiddenimports += collect_submodules('openpyxl')
+datas += collect_data_files('pandas')
 
 # Find main.py
 main_py = spec_root / 'main.py'
