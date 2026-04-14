@@ -44,10 +44,27 @@ class _PluginInstallWorker(QThread):
     def run(self):
         owner, repo = self._owner, self._repo
         plugins_dir = self._plugins_dir
-        plugins_dir.mkdir(parents=True, exist_ok=True)
+
+        # Fix CR: wrap mkdir so PermissionError is surfaced via error signal
+        try:
+            plugins_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            self.error.emit(f"Could not create plugins directory:\n{plugins_dir}\n\n{e}")
+            return
+
+        # Fix CR: resolve default branch from GitHub API; fall back to main/master
+        branches_to_try: list = []
+        try:
+            api_url = f"https://api.github.com/repos/{owner}/{repo}"
+            req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                meta = json.loads(resp.read())
+            branches_to_try = [meta.get("default_branch", "main")]
+        except Exception:
+            branches_to_try = ["main", "master"]
 
         last_error = None
-        for branch in ('main', 'master'):
+        for branch in branches_to_try:
             zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
             try:
                 with urllib.request.urlopen(zip_url, timeout=30) as resp:
@@ -79,22 +96,37 @@ class _PluginInstallWorker(QThread):
                                     "Ensure the repo contains a JobDocs plugin module."
                                 )
                                 return
+                            # Fix CR: fail fast if multiple plugin roots are found
+                            if len(candidates) > 1:
+                                self.error.emit(
+                                    f"Found multiple plugin roots in {owner}/{repo}. "
+                                    "Ensure the repo contains exactly one JobDocs plugin module."
+                                )
+                                return
                             module_folder = candidates[0]
                             dest = plugins_dir / module_folder.name
                             module_name = module_folder.name
                             src = module_folder
 
+                        # Fix CR: backup-then-swap so the old plugin survives a failed rename
                         tmp_dest = dest.with_name(dest.name + '.tmp')
+                        backup_dest = dest.with_name(dest.name + '.bak')
                         try:
                             if tmp_dest.exists():
                                 shutil.rmtree(tmp_dest)
+                            if backup_dest.exists():
+                                shutil.rmtree(backup_dest)
                             shutil.copytree(src, tmp_dest)
                             if dest.exists():
-                                shutil.rmtree(dest)
+                                dest.rename(backup_dest)
                             tmp_dest.rename(dest)
+                            if backup_dest.exists():
+                                shutil.rmtree(backup_dest)
                         except Exception:
                             if tmp_dest.exists():
                                 shutil.rmtree(tmp_dest, ignore_errors=True)
+                            if backup_dest.exists() and not dest.exists():
+                                backup_dest.rename(dest)
                             raise
 
                 self.success.emit(module_name, str(dest))
@@ -108,7 +140,7 @@ class _PluginInstallWorker(QThread):
                 return
 
         self.error.emit(
-            f"Could not download {owner}/{repo} (tried main and master branches).\n{last_error}"
+            f"Could not download {owner}/{repo} (tried: {', '.join(branches_to_try)}).\n{last_error}"
         )
 
 
