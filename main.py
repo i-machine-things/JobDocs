@@ -53,58 +53,91 @@ class _PluginInstallWorker(QThread):
             return ''
 
         deps_dir = plugin_dir / 'deps'
+
+        # Install into a temp dir then swap atomically to avoid leaving deps_dir
+        # in a partial state if the install fails mid-way.
+        tmp_deps = deps_dir.with_name('deps.tmp')
         try:
-            deps_dir.mkdir(parents=True, exist_ok=True)
+            if tmp_deps.exists():
+                shutil.rmtree(tmp_deps)
+            tmp_deps.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            return f"\n\nCould not create deps directory: {e}"
+            return f"\n\nCould not create temp deps directory: {e}"
 
-        # In dev mode sys.executable is Python, so try it first.
-        # In a frozen build it is the exe itself; fall back to system Python,
-        # then to pip's own internal API (bundled with Python/the frozen exe).
-        candidates = []
-        if not getattr(sys, 'frozen', False):
-            candidates.append(sys.executable)
-        candidates.extend(['python', 'python3', 'py'])
-
+        # Fix CR: in frozen mode try the bundled pip API first so wheels are
+        # resolved against the bundled Python ABI, not a system Python that may
+        # differ. Fall back to system Python names only after that attempt fails.
         last_err = ''
-        for python in candidates:
+        installed = False
+
+        if getattr(sys, 'frozen', False):
             try:
-                result = subprocess.run(
-                    [python, '-m', 'pip', 'install',
-                     '--target', str(deps_dir),
-                     '-r', str(req_file)],
-                    capture_output=True, text=True, timeout=120,
-                )
-                if result.returncode == 0:
-                    return ''
-                last_err = (result.stderr or result.stdout).strip()
-            except FileNotFoundError:
-                continue
-            except subprocess.TimeoutExpired:
-                last_err = 'pip install timed out after 120 s'
-                break
+                from pip._internal.cli.main import main as _pip_main  # type: ignore[import]
+                args = ['install', '--target', str(tmp_deps), '-r', str(req_file)]
+                rc = _pip_main(args)
+                installed = (rc == 0)
+                if not installed:
+                    last_err = f'pip internal API exited with code {rc}'
+            except SystemExit as exc:
+                installed = (exc.code or 0) == 0
+                if not installed:
+                    last_err = f'pip internal API exited with code {exc.code}'
+            except Exception as exc:
+                last_err = str(exc)
 
-        # Last resort: call pip's internal API directly (works in frozen builds
-        # where no system Python is on PATH, since pip ships with Python).
+        if not installed:
+            candidates = []
+            if not getattr(sys, 'frozen', False):
+                candidates.append(sys.executable)
+            candidates.extend(['python', 'python3', 'py'])
+
+            for python in candidates:
+                try:
+                    result = subprocess.run(
+                        [python, '-m', 'pip', 'install',
+                         '--target', str(tmp_deps),
+                         '-r', str(req_file)],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    if result.returncode == 0:
+                        installed = True
+                        break
+                    last_err = (result.stderr or result.stdout).strip()
+                except FileNotFoundError:
+                    continue
+                except subprocess.TimeoutExpired:
+                    last_err = 'pip install timed out after 120 s'
+                    break
+
+        if not installed:
+            shutil.rmtree(tmp_deps, ignore_errors=True)
+            return (
+                f"\n\nPlugin installed, but dependencies could not be installed automatically.\n"
+                f"Run manually: pip install --target \"{deps_dir}\" -r \"{req_file}\"\n\n"
+                f"Error: {last_err or 'no usable Python found on PATH'}"
+            )
+
+        # Atomically swap temp dir into place (backup-then-swap).
+        backup = deps_dir.with_name('deps.bak')
         try:
-            from pip._internal.cli.main import main as _pip_main  # type: ignore[import]
-            args = ['install', '--target', str(deps_dir), '-r', str(req_file)]
-            rc = _pip_main(args)
-            if rc == 0:
-                return ''
-            last_err = f'pip internal API exited with code {rc}'
-        except SystemExit as exc:
-            if (exc.code or 0) == 0:
-                return ''
-            last_err = f'pip internal API exited with code {exc.code}'
-        except Exception as exc:
-            last_err = str(exc)
+            if backup.exists():
+                shutil.rmtree(backup)
+            if deps_dir.exists():
+                deps_dir.rename(backup)
+            tmp_deps.rename(deps_dir)
+            if backup.exists():
+                shutil.rmtree(backup)
+        except Exception:
+            if tmp_deps.exists() and not deps_dir.exists():
+                try:
+                    tmp_deps.rename(deps_dir)
+                except Exception:
+                    pass
+            if backup.exists() and not deps_dir.exists():
+                backup.rename(deps_dir)
+            raise
 
-        return (
-            f"\n\nPlugin installed, but dependencies could not be installed automatically.\n"
-            f"Run manually: pip install -r \"{req_file}\"\n\n"
-            f"Error: {last_err or 'no usable Python found on PATH'}"
-        )
+        return ''
 
     def run(self):
         owner, repo = self._owner, self._repo
