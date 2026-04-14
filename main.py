@@ -100,6 +100,7 @@ class _PluginInstallWorker(QThread):
                          '--target', str(tmp_deps),
                          '-r', str(req_file)],
                         capture_output=True, text=True, timeout=120,
+                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
                     )
                     if result.returncode == 0:
                         installed = True
