@@ -156,7 +156,13 @@ hiddenimports = [
 ]
 
 # Third-party packages required by plugins (e.g. jobdocs-report-fixer uses pandas + openpyxl).
-# collect_submodules is needed because PyInstaller cannot trace dynamic imports inside plugins.
+#
+# Architectural note: ideally plugin dependencies would be self-contained within each plugin
+# (e.g. a deps/ subfolder added to sys.path by the plugin loader). However, PyInstaller
+# performs static analysis at build time and cannot discover imports made by plugins that
+# are loaded dynamically at runtime — there is no pip inside the bundled exe to install
+# anything after the fact. Until a per-plugin deps/ system is implemented, shared plugin
+# dependencies must be declared here so PyInstaller includes them in the bundle.
 hiddenimports += collect_submodules('pandas')
 hiddenimports += collect_submodules('openpyxl')
 datas += collect_data_files('pandas')
