@@ -4055,3 +4055,25 @@ Reviewing files that changed from the base of the PR and between 09700c52e8b62d3
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-14 — `main.py` (plugin dep installer — PR #19 findings)
+
+**Review:** CodeRabbit flagged three actionable issues in `_install_deps`.
+**Result:** All three fixed in commit `dad24fb`.
+
+### Findings
+
+1. **Atomic install via temp directory**
+   - Pip into `deps.tmp/` first, then backup-then-swap into `deps/` on success.
+   - Prevents stale/partial packages if install fails mid-way.
+   - Fix applied: backup-then-swap pattern identical to plugin install in `run()`.
+
+2. **Manual recovery command missing `--target`**
+   - Error message said `pip install -r req_file`, which installs globally.
+   - Fix applied: changed to `pip install --target "{deps_dir}" -r "{req_file}"`.
+
+3. **Frozen mode: try bundled pip before system Python**
+   - System Python may have a different ABI than the bundled Python, causing binary wheels to be incompatible.
+   - Fix applied: in frozen mode, attempt `pip._internal.cli.main` first; fall back to `python`/`py` on PATH only after that fails.
