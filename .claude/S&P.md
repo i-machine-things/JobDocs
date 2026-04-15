@@ -4663,3 +4663,138 @@ Reviewing files that changed from the base of the PR and between 1c57a11293dbb3c
 2. **`_on_plugin_install_success` promises "Restart to load it" even when deps failed**
    - When `dep_warning` is set, the base message still said "Restart JobDocs to load it." — misleading because the plugin may not actually load without its dependencies.
    - Fix applied: when `dep_warning` is truthy, base message now reads "files copied… may not load until dependencies are resolved" (QMessageBox.warning); only the success path keeps "Restart JobDocs to load it." (QMessageBox.information).
+
+---
+
+## 2026-04-15 — `PR #20: build: replace PyInstaller with embedded Python for Windows` — review run 3
+
+**Actionable comments posted: 2**
+
+<details>
+<summary>♻️ Duplicate comments (1)</summary><blockquote>
+
+<details>
+<summary>main.py (1)</summary><blockquote>
+
+`57-63`: _⚠️ Potential issue_ | _🟠 Major_
+
+**Flatpak still surfaces a recovery command that targets the read-only runtime.**
+
+This branch correctly skips auto-install on Flatpak, but the returned `sys.executable -m pip ...` advice still points users at the same sandboxed interpreter you just deemed unwritable. For dependency-backed plugins, that leaves no working recovery path. Either remove the manual command here and state that manual dependency install is unsupported in Flatpak builds, or switch Flatpak to a supported user-writable install target.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@main.py` around lines 57 - 63, The Flatpak branch currently returns a
+recovery command using sys.executable which points to the read-only runtime;
+update the returned message in the FLATPAK_ID branch to avoid suggesting the
+unwritable runtime. Replace the manual command that uses sys.executable -m pip
+install -r "{req_file}" with either (a) a clear statement that manual dependency
+installation is unsupported inside Flatpak builds (remove the pip command), or
+(b) a supported user-writable alternative such as recommending the host/system
+Python or a user-install target (e.g., "python -m pip install --user -r
+\"{req_file}\"" or instructing to install on the host), and ensure the message
+references req_file but not the sandboxed sys.executable.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Inline comments:
+In `@main.py`:
+- Around line 62-63: The printed "Install manually" recovery command uses
+sys.executable without quotes, which breaks on paths containing spaces; update
+both occurrences where the string is constructed (the f-string that includes
+sys.executable and req_file) to wrap sys.executable in quotes (e.g.,
+f'"{sys.executable}" -m pip install -r "{req_file}"') so the copy-paste command
+is safe on Windows; ensure you change both places referenced in the diff (the
+two f-strings that include sys.executable and req_file).
+- Around line 47-50: The docstring in main.py containing "Install plugin
+requirements into the embedded Python's site-packages." includes the sequence
+runtime\python.exe which produces an invalid escape; update that docstring (the
+triple-quoted string starting with "Install plugin requirements...") to either
+escape the backslash as runtime\\python.exe or convert the docstring to a raw
+string (e.g., r"""...""") so the backslash is treated literally.
+
+---
+
+Duplicate comments:
+In `@main.py`:
+- Around line 57-63: The Flatpak branch currently returns a recovery command
+using sys.executable which points to the read-only runtime; update the returned
+message in the FLATPAK_ID branch to avoid suggesting the unwritable runtime.
+Replace the manual command that uses sys.executable -m pip install -r
+"{req_file}" with either (a) a clear statement that manual dependency
+installation is unsupported inside Flatpak builds (remove the pip command), or
+(b) a supported user-writable alternative such as recommending the host/system
+Python or a user-install target (e.g., "python -m pip install --user -r
+\"{req_file}\"" or instructing to install on the host), and ensure the message
+references req_file but not the sandboxed sys.executable.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix (Beta)</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {"checkboxId": "4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9"} --> Push a commit to this branch (recommended)
+- [ ] <!-- {"checkboxId": "ff5b1114-7d8c-49e6-8ac1-43f82af23a33"} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `b45528b0-9c0e-423e-aec9-9aed4edd0b98`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 3168a7d190279d965f118367178a6ea8b9b17017 and 7e62ebbabe8bca488cef703a55a2b26858329033.
+
+</details>
+
+<details>
+<summary>⛔ Files ignored due to path filters (1)</summary>
+
+* `.claude/S&P.md` is excluded by `!.claude/S&P.md`
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (1)</summary>
+
+* `main.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
