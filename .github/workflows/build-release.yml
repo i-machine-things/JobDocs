@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string (e.g. v0.7.1-test)'
+        required: false
+        default: 'v0.0.0-test'
 
 jobs:
   verify-stable-ancestry:
@@ -43,6 +49,8 @@ jobs:
       # SHA256 of python-3.12.9-embed-amd64.zip (verified via python.org sigstore)
       # Update this value whenever PY_VER is bumped.
       PY_EMBED_SHA256: "615861fb801e8b04c847598db4e1e46e4b046295017caa37cb5486dde72b5865"
+      # Use the workflow_dispatch version input for manual test builds; fall back to the tag name.
+      RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
     steps:
       - name: Checkout
@@ -103,7 +111,7 @@ jobs:
       - name: Compile launcher (MinGW)
         shell: bash
         run: |
-          VER="${{ github.ref_name }}"
+          VER="${{ env.RELEASE_VERSION }}"
           VER="${VER#v}"
           IFS='.' read -r MAJOR MINOR PATCH rest <<< "$VER"
           MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
@@ -155,14 +163,14 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: |
-          $env:RELEASE_VERSION = "${{ github.ref_name }}"
+          $env:RELEASE_VERSION = "${{ env.RELEASE_VERSION }}"
           iscc build_scripts\JobDocs.iss
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: JobDocs-windows
-          path: installer_out/JobDocs-${{ github.ref_name }}-windows-setup.exe
+          path: installer_out/JobDocs-${{ env.RELEASE_VERSION }}-windows-setup.exe
 
   # ---------------------------------------------------------------------------
   # Linux — PyInstaller binary wrapped in a Flatpak bundle
@@ -252,6 +260,7 @@ jobs:
   # ---------------------------------------------------------------------------
   create-release:
     needs: [build-windows, build-flatpak]
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
