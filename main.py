@@ -58,8 +58,8 @@ class _PluginInstallWorker(QThread):
         # Manual install via sys.executable is also unsupported (same read-only runtime).
         if os.getenv('FLATPAK_ID'):
             return (
-                f"\n\nDependency installation is not supported inside a Flatpak build.\n"
-                f"Install the plugin's dependencies on the host system before use."
+                "\n\nDependency installation is not supported inside a Flatpak build.\n"
+                "Install the plugin's dependencies on the host system before use."
             )
 
         try:

@@ -4931,3 +4931,16 @@ Reviewing files that changed from the base of the PR and between 7e62ebbabe8bca4
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-15 — `main.py` (PR #20 review run 4 — unnecessary f-strings)
+
+**Review:** 1 nitpick (Ruff F541).
+**Result:** Fixed.
+
+### Findings
+
+1. **F-strings with no placeholders (Ruff F541)**
+   - Flatpak return block used `f"..."` on two lines that contain no `{}` interpolation.
+   - Fix applied: removed `f` prefixes; plain string literals.
