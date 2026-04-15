@@ -40,6 +40,9 @@ jobs:
 
     env:
       PY_VER: "3.12.9"
+      # SHA256 of python-3.12.9-embed-amd64.zip (verified via python.org sigstore)
+      # Update this value whenever PY_VER is bumped.
+      PY_EMBED_SHA256: "615861fb801e8b04c847598db4e1e46e4b046295017caa37cb5486dde72b5865"
 
     steps:
       - name: Checkout
@@ -50,6 +53,11 @@ jobs:
         run: |
           $url = "https://www.python.org/ftp/python/$env:PY_VER/python-$env:PY_VER-embed-amd64.zip"
           Invoke-WebRequest $url -OutFile python-embed.zip
+          $actual = (Get-FileHash python-embed.zip -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $env:PY_EMBED_SHA256) {
+            Write-Error "SHA256 mismatch for python-embed.zip`nExpected: $env:PY_EMBED_SHA256`nActual:   $actual"
+            exit 1
+          }
           Expand-Archive python-embed.zip -DestinationPath runtime
 
       - name: Enable site-packages in embedded Python
@@ -57,12 +65,15 @@ jobs:
         run: |
           $pth = Get-Item runtime\python3*._pth
           (Get-Content $pth) -replace '#import site', 'import site' | Set-Content $pth
+          New-Item -ItemType Directory -Path runtime\Lib\site-packages -Force | Out-Null
 
       - name: Bootstrap pip into embedded Python
         shell: pwsh
         run: |
-          Invoke-WebRequest https://bootstrap.pypa.io/get-pip.py -OutFile get-pip.py
-          runtime\python.exe get-pip.py --no-warn-script-location
+          # Use the system pip (pre-installed on windows-latest) rather than
+          # downloading get-pip.py from the network, avoiding an unverified fetch.
+          python -m pip install --target runtime\Lib\site-packages --no-deps pip
+          runtime\python.exe -m pip --version
 
       - name: Install app dependencies into embedded Python
         run: runtime\python.exe -m pip install -r requirements.txt --no-warn-script-location
@@ -71,7 +82,7 @@ jobs:
       - name: Stage app source tree
         shell: pwsh
         run: |
-          $src_items = @('main.py','core','modules','shared',
+          $src_items = @('main.py','README.md','core','modules','shared',
                          'JobDocs.iconset','sample_files','requirements.txt')
           New-Item -ItemType Directory -Path app -Force | Out-Null
           foreach ($item in $src_items) {
@@ -83,7 +94,13 @@ jobs:
       - name: Compile launcher (MinGW)
         shell: bash
         run: |
-          windres launcher/launcher.rc -O coff -o launcher_res.o
+          VER="${{ github.ref_name }}"
+          VER="${VER#v}"
+          IFS='.' read -r MAJOR MINOR PATCH rest <<< "$VER"
+          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
+          windres launcher/launcher.rc -O coff -o launcher_res.o \
+            -D VERSION_MAJOR="$MAJOR" -D VERSION_MINOR="$MINOR" \
+            -D VERSION_PATCH="$PATCH" -D VERSION_BUILD=0
           gcc -mwindows -O2 -o JobDocs.exe launcher/launcher.c launcher_res.o
 
       - name: Verify build

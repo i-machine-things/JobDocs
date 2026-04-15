@@ -160,10 +160,10 @@ hiddenimports = [
 ]
 
 # Plugin dependencies are NOT bundled here.
-# Each plugin manages its own deps in a deps/ subfolder next to its module.py.
-# The module loader prepends that folder to sys.path before exec_module so the
-# plugin can import normally. The plugin installer (main.py) runs pip install
-# --target deps/ from the plugin's requirements.txt at install time.
+# When a plugin is installed, main.py shells out to:
+#   python -m pip install -r <plugin>/requirements.txt
+# which installs deps into the running Python environment (embedded runtime\
+# site-packages in a release build, the dev venv when running from source).
 
 # Find main.py
 main_py = spec_root / 'main.py'

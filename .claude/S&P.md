@@ -4321,3 +4321,42 @@ Reviewing files that changed from the base of the PR and between 09700c52e8b62d3
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+## 2026-04-15 — multiple files (PR #20 — embedded Python build findings)
+
+**Review:** CodeRabbit flagged 4 actionable issues and 3 nitpicks across the embedded-Python build PR.
+**Result:** All 7 fixed in this session.
+
+### Findings
+
+1. **No hash verification on downloaded Python embeddable**
+   - `build-release.yml` downloaded `python-$PY_VER-embed-amd64.zip` without verifying integrity.
+   - Fix applied: pinned `PY_EMBED_SHA256` env var (from python.org sigstore); added `Get-FileHash` check before `Expand-Archive`; fails fast on mismatch.
+
+2. **get-pip.py fetched from network without verification**
+   - Downloading `get-pip.py` from `bootstrap.pypa.io` at build time is an unverified external fetch.
+   - Fix applied: replaced with `python -m pip install --target runtime\Lib\site-packages pip` using the system Python already installed on `windows-latest`, eliminating the external download entirely.
+
+3. **README.md missing from staged app source tree**
+   - `show_readme()` resolves `README.md` relative to `__file__`; it was absent from the `$src_items` copy list so Help → User Guide would fail in packaged builds.
+   - Fix applied: added `'README.md'` to `$src_items` in the Stage app source tree step.
+
+4. **`CreateProcessW` return value not checked in launcher.c**
+   - Failures were silently swallowed; `CloseHandle` was called unconditionally on possibly-invalid handles.
+   - Fix applied: captured BOOL return; on failure calls `GetLastError()`, shows `MessageBoxW` with Python path, script path, and error code, then returns 1. `CloseHandle` is now only reached on success.
+
+5. **Flatpak `/app` is read-only at runtime — `_install_deps` would always fail**
+   - `_install_deps` calls `pip install` using `sys.executable`, which on Flatpak points to a location under read-only `/app`.
+   - Fix applied: added `os.getenv('FLATPAK_ID')` check; returns a clear skip message with manual install command instead of invoking pip.
+
+6. **`AddonPackages/` in .gitignore not anchored to repo root**
+   - Unanchored pattern would silently ignore same-named nested directories.
+   - Fix applied: changed to `/AddonPackages/`.
+
+7. **`launcher.rc` version hardcoded to `0.6.0.0`**
+   - EXE file properties would disagree with the installer/release tag after a version bump.
+   - Fix applied: added preprocessor macros (`VERSION_MAJOR/MINOR/PATCH/BUILD`) with fallback defaults; updated `FILEVERSION`, `PRODUCTVERSION`, and string values to use `VER_STRING` macro; `build-release.yml` Compile Launcher step now parses `github.ref_name` and passes `-D VERSION_*` to windres.
+
+8. **Stale comment in `JobDocs.spec` described removed `deps/`+`sys.path` plugin model**
+   - Comment referenced the old `pip install --target deps/` flow that no longer exists.
+   - Fix applied: reworded to describe current model (pip install into running Python environment).

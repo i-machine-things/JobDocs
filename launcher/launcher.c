@@ -48,7 +48,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow)
     PROCESS_INFORMATION pi;
     ZeroMemory(&pi, sizeof(pi));
 
-    CreateProcessW(
+    BOOL created = CreateProcessW(
         python,     /* application */
         cmdline,    /* command line */
         NULL,       /* process security */
@@ -60,6 +60,19 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow)
         &si,
         &pi
     );
+
+    if (!created) {
+        DWORD err = GetLastError();
+        wchar_t msg[512];
+        _snwprintf_s(msg, 512, _TRUNCATE,
+                     L"Failed to start JobDocs.\n\n"
+                     L"Python: %s\n"
+                     L"Script: %s\n"
+                     L"Error code: %lu",
+                     python, script, (unsigned long)err);
+        MessageBoxW(NULL, msg, L"JobDocs Launch Error", MB_OK | MB_ICONERROR);
+        return 1;
+    }
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);

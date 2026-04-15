@@ -6,6 +6,7 @@ Main application entry point using the modular plugin architecture.
 """
 
 import io
+import os
 import shutil
 import subprocess
 import sys
@@ -52,6 +53,14 @@ class _PluginInstallWorker(QThread):
         req_file = plugin_dir / 'requirements.txt'
         if not req_file.exists():
             return ''
+
+        # On Flatpak, /app is read-only at runtime; pip installs will always fail.
+        if os.getenv('FLATPAK_ID'):
+            return (
+                f"\n\nDependency installation skipped: running inside Flatpak "
+                f"(read-only filesystem).\n"
+                f"Install manually: pip install -r \"{req_file}\""
+            )
 
         try:
             result = subprocess.run(
