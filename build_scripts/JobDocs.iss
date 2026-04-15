@@ -32,8 +32,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Dirs]
-; plugins/ is never removed on uninstall so user-installed plugins survive upgrades
-Name: "{app}\plugins"; Flags: uninsneveruninstall
+Name: "{app}\plugins"
 
 [Files]
 ; Launcher executable
@@ -45,6 +44,14 @@ Source: "..\app\*";          DestDir: "{app}\app"; Flags: ignoreversion recurses
 ; Embedded Python 3.12 runtime with pre-installed dependencies
 Source: "..\runtime\*";      DestDir: "{app}\runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[UninstallDelete]
+; Force-remove everything including runtime-created files (e.g. __pycache__,
+; pip-installed plugin deps) and user-installed plugins.
+Type: filesandordirs; Name: "{app}\app"
+Type: filesandordirs; Name: "{app}\runtime"
+Type: filesandordirs; Name: "{app}\plugins"
+Type: filesandordirs; Name: "{app}"
+
 [Icons]
 Name: "{group}\{#MyAppName}";                          Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}";    Filename: "{uninstallexe}"
@@ -52,3 +59,32 @@ Name: "{autodesktop}\{#MyAppName}";                    Filename: "{app}\{#MyAppE
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+var
+  KeepSettings: Boolean;
+
+function InitializeUninstall(): Boolean;
+begin
+  KeepSettings := MsgBox(
+    'Do you want to keep your JobDocs settings and history?' + #13#10 + #13#10 +
+    'Yes  — keep settings, jobs history, and installed plugins'' data' + #13#10 +
+    'No   — remove everything including settings and history',
+    mbConfirmation, MB_YESNO) = IDYES;
+  Result := True;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ConfigDir: String;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    if not KeepSettings then
+    begin
+      ConfigDir := ExpandConstant('{localappdata}\JobDocs');
+      if DirExists(ConfigDir) then
+        DelTree(ConfigDir, True, True, True);
+    end;
+  end;
+end;
