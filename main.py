@@ -46,7 +46,7 @@ class _PluginInstallWorker(QThread):
     def _install_deps(self, plugin_dir: Path) -> str:
         """Install plugin requirements into the embedded Python's site-packages.
 
-        Uses sys.executable (the embedded runtime\python.exe in a release build,
+        Uses sys.executable (the embedded runtime\\python.exe in a release build,
         or the dev Python when running from source). Returns a non-empty warning
         string on failure, or '' on success / no requirements.txt present.
         """
@@ -55,11 +55,11 @@ class _PluginInstallWorker(QThread):
             return ''
 
         # On Flatpak, /app is read-only at runtime; pip installs will always fail.
+        # Manual install via sys.executable is also unsupported (same read-only runtime).
         if os.getenv('FLATPAK_ID'):
             return (
-                f"\n\nDependency installation skipped: running inside Flatpak "
-                f"(read-only filesystem).\n"
-                f"Install manually: {sys.executable} -m pip install -r \"{req_file}\""
+                f"\n\nDependency installation is not supported inside a Flatpak build.\n"
+                f"Install the plugin's dependencies on the host system before use."
             )
 
         try:
@@ -73,7 +73,7 @@ class _PluginInstallWorker(QThread):
                 return ''
             err = (result.stderr or result.stdout).strip()
             return (f"\n\nDependency installation failed.\n"
-                    f"Run manually: {sys.executable} -m pip install -r \"{req_file}\"\n\nError: {err}")
+                    f"Run manually: \"{sys.executable}\" -m pip install -r \"{req_file}\"\n\nError: {err}")
         except Exception as exc:
             return f"\n\nDependency installation failed: {exc}"
 

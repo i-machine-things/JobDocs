@@ -4798,3 +4798,24 @@ Reviewing files that changed from the base of the PR and between 3168a7d190279d9
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-15 — `main.py` (PR #20 review run 3 — Flatpak recovery command & quoting)
+
+**Review:** CodeRabbit flagged 2 actionable issues (1 duplicate + 1 new inline) and 1 nitpick in `_install_deps`.
+**Result:** All 3 fixed.
+
+### Findings
+
+1. **Flatpak recovery command points at read-only `sys.executable`**
+   - After using `sys.executable` in the Flatpak skip message, CodeRabbit noted that `sys.executable` IS the sandboxed read-only runtime — so the manual command was also unworkable.
+   - Fix applied: removed the pip command entirely; message now states "dependency installation is not supported inside a Flatpak build."
+
+2. **`sys.executable` not quoted in failure recovery command**
+   - Paths containing spaces (e.g. `C:\Program Files\...`) would break the copy-paste command.
+   - Fix applied: wrapped as `"{sys.executable}"` in the failure message f-string.
+
+3. **Docstring contains invalid escape `runtime\python.exe`**
+   - Bare backslash in a regular (non-raw) docstring is an invalid escape sequence.
+   - Fix applied: escaped as `runtime\python.exe`.
