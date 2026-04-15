@@ -4528,3 +4528,22 @@ Reviewing files that changed from the base of the PR and between 0497fc59fac3568
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-15 — `main.py` + `build-release.yml` (PR #20 duplicate findings — Flatpak plugins dir & pip pinning)
+
+**Review:** CodeRabbit flagged 2 issues as duplicate comments (carried forward from first review pass, not fully resolved by `1c57a11`).
+**Result:** Both fixed.
+
+### Findings
+
+1. **`_get_plugins_dir()` resolves into read-only Flatpak bundle**
+   - On Flatpak, `__file__` is under `/app` which is read-only at runtime.
+   - `_get_plugins_dir()` would return `/app/plugins`, causing plugin install to fail silently.
+   - Fix applied: check `FLATPAK_ID` env var; if set, return `$XDG_DATA_HOME/plugins` (or `~/.var/app/{FLATPAK_ID}/data/plugins` as fallback).
+
+2. **pip bootstrap in `build-release.yml` uses unpinned version with mutable system Python**
+   - `python -m pip install ... pip` pulls whatever pip PyPI serves on build day.
+   - System `python` comes from the mutable `windows-latest` image.
+   - Fix applied: added `actions/setup-python@v5` step (pinned to `python-version: '3.12'`); pinned pip to `pip==24.3.1` in the install command.

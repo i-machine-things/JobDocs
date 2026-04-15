@@ -407,7 +407,16 @@ class JobDocsMainWindow(QMainWindow):
         Dev / source layout:
             repo/main.py
             repo/plugins/       ← plugins live here
+
+        Flatpak: /app is read-only at runtime; plugins must live in the
+        per-user writable data dir so they survive across app updates.
         """
+        flatpak_id = os.getenv('FLATPAK_ID')
+        if flatpak_id:
+            xdg_data = os.getenv('XDG_DATA_HOME') or os.path.join(
+                os.path.expanduser('~'), '.var', 'app', flatpak_id, 'data'
+            )
+            return Path(xdg_data) / 'plugins'
         app_dir = Path(__file__).resolve().parent
         if (app_dir.parent / 'runtime').is_dir():
             return app_dir.parent / 'plugins'

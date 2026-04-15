@@ -48,6 +48,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python for bootstrapping
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Download Python embeddable
         shell: pwsh
         run: |
@@ -70,9 +75,10 @@ jobs:
       - name: Bootstrap pip into embedded Python
         shell: pwsh
         run: |
-          # Use the system pip (pre-installed on windows-latest) rather than
+          # Use the setup-python system pip (pinned version above) rather than
           # downloading get-pip.py from the network, avoiding an unverified fetch.
-          python -m pip install --target runtime\Lib\site-packages --no-deps pip
+          # Pin pip version for reproducible builds — bump PIP_VER when upgrading.
+          python -m pip install --target runtime\Lib\site-packages --no-deps "pip==24.3.1"
           runtime\python.exe -m pip --version
 
       - name: Install app dependencies into embedded Python
