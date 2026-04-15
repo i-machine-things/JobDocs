@@ -4819,3 +4819,115 @@ Reviewing files that changed from the base of the PR and between 3168a7d190279d9
 3. **Docstring contains invalid escape `runtime\python.exe`**
    - Bare backslash in a regular (non-raw) docstring is an invalid escape sequence.
    - Fix applied: escaped as `runtime\python.exe`.
+
+---
+
+## 2026-04-15 — `PR #20: build: replace PyInstaller with embedded Python for Windows` — review run 4
+
+
+
+<details>
+<summary>🧹 Nitpick comments (1)</summary><blockquote>
+
+<details>
+<summary>main.py (1)</summary><blockquote>
+
+`60-63`: **Remove extraneous `f` prefixes from strings without placeholders.**
+
+Lines 61 and 62 are f-strings but contain no interpolation placeholders. This is flagged by Ruff (F541).
+
+
+<details>
+<summary>Suggested fix</summary>
+
+```diff
+         if os.getenv('FLATPAK_ID'):
+             return (
+-                f"\n\nDependency installation is not supported inside a Flatpak build.\n"
+-                f"Install the plugin's dependencies on the host system before use."
++                "\n\nDependency installation is not supported inside a Flatpak build.\n"
++                "Install the plugin's dependencies on the host system before use."
+             )
+```
+</details>
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@main.py` around lines 60 - 63, The returned multiline string uses unnecessary
+f-strings (no interpolation) which triggers Ruff F541; remove the leading f
+prefixes from the two string literals in the return expression (the strings
+beginning with "Dependency installation is not supported inside a Flatpak
+build." and "Install the plugin's dependencies on the host system before use.")
+so they are plain string literals instead of f-strings.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Nitpick comments:
+In `@main.py`:
+- Around line 60-63: The returned multiline string uses unnecessary f-strings
+(no interpolation) which triggers Ruff F541; remove the leading f prefixes from
+the two string literals in the return expression (the strings beginning with
+"Dependency installation is not supported inside a Flatpak build." and "Install
+the plugin's dependencies on the host system before use.") so they are plain
+string literals instead of f-strings.
+```
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `e1a7e1e5-a2d9-4ecc-a984-81119a45eb2e`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 7e62ebbabe8bca488cef703a55a2b26858329033 and 1c2ff7c951b829c8963cab8faf1f6fa4e0f2bedb.
+
+</details>
+
+<details>
+<summary>⛔ Files ignored due to path filters (1)</summary>
+
+* `.claude/S&P.md` is excluded by `!.claude/S&P.md`
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (1)</summary>
+
+* `main.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
