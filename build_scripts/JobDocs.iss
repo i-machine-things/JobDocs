@@ -36,13 +36,16 @@ Name: "{app}\plugins"
 
 [Files]
 ; Launcher executable
-Source: "..\JobDocs.exe";    DestDir: "{app}"; Flags: ignoreversion
+Source: "..\JobDocs.exe";          DestDir: "{app}"; Flags: ignoreversion
+
+; Application icon (used directly by shortcuts to bypass EXE icon extraction)
+Source: "..\windows\icon.ico";     DestDir: "{app}"; Flags: ignoreversion
 
 ; Python source tree (runs via runtime\pythonw.exe)
-Source: "..\app\*";          DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\app\*";                DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Embedded Python 3.12 runtime with pre-installed dependencies
-Source: "..\runtime\*";      DestDir: "{app}\runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\runtime\*";            DestDir: "{app}\runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [UninstallDelete]
 ; Force-remove everything including runtime-created files (e.g. __pycache__,
@@ -53,9 +56,9 @@ Type: filesandordirs; Name: "{app}\plugins"
 Type: filesandordirs; Name: "{app}"
 
 [Icons]
-Name: "{group}\{#MyAppName}";                          Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}";                          Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}";    Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}";                    Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}";                    Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
