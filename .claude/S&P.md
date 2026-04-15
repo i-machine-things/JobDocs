@@ -4646,3 +4646,20 @@ Reviewing files that changed from the base of the PR and between 1c57a11293dbb3c
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-15 — `main.py` (PR #20 review run 2 — pip instructions & dep-warning message)
+
+**Review:** CodeRabbit flagged 2 actionable issues in `_install_deps` and `_on_plugin_install_success`.
+**Result:** Both fixed.
+
+### Findings
+
+1. **Manual pip recovery commands use bare `pip` instead of `sys.executable`**
+   - Both the Flatpak skip message and the subprocess failure message advised `pip install -r ...`, which resolves to whatever `pip` is first on PATH and may target the wrong interpreter/venv.
+   - Fix applied: changed to `{sys.executable} -m pip install -r "{req_file}"` in both strings.
+
+2. **`_on_plugin_install_success` promises "Restart to load it" even when deps failed**
+   - When `dep_warning` is set, the base message still said "Restart JobDocs to load it." — misleading because the plugin may not actually load without its dependencies.
+   - Fix applied: when `dep_warning` is truthy, base message now reads "files copied… may not load until dependencies are resolved" (QMessageBox.warning); only the success path keeps "Restart JobDocs to load it." (QMessageBox.information).

@@ -59,7 +59,7 @@ class _PluginInstallWorker(QThread):
             return (
                 f"\n\nDependency installation skipped: running inside Flatpak "
                 f"(read-only filesystem).\n"
-                f"Install manually: pip install -r \"{req_file}\""
+                f"Install manually: {sys.executable} -m pip install -r \"{req_file}\""
             )
 
         try:
@@ -73,7 +73,7 @@ class _PluginInstallWorker(QThread):
                 return ''
             err = (result.stderr or result.stdout).strip()
             return (f"\n\nDependency installation failed.\n"
-                    f"Run manually: pip install -r \"{req_file}\"\n\nError: {err}")
+                    f"Run manually: {sys.executable} -m pip install -r \"{req_file}\"\n\nError: {err}")
         except Exception as exc:
             return f"\n\nDependency installation failed: {exc}"
 
@@ -578,10 +578,12 @@ class JobDocsMainWindow(QMainWindow):
         worker.start()
 
     def _on_plugin_install_success(self, module_name: str, dest: str, dep_warning: str, worker: _PluginInstallWorker):
-        msg = f"Plugin '{module_name}' installed to:\n{dest}\n\nRestart JobDocs to load it."
         if dep_warning:
+            msg = (f"Plugin '{module_name}' files copied to:\n{dest}\n\n"
+                   f"The plugin may not load until dependencies are resolved.")
             QMessageBox.warning(self, "Plugin Installed", msg + dep_warning)
         else:
+            msg = f"Plugin '{module_name}' installed to:\n{dest}\n\nRestart JobDocs to load it."
             QMessageBox.information(self, "Plugin Installed", msg)
         worker.deleteLater()
 
