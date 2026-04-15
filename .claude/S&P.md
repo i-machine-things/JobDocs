@@ -4360,3 +4360,171 @@ Reviewing files that changed from the base of the PR and between 09700c52e8b62d3
 8. **Stale comment in `JobDocs.spec` described removed `deps/`+`sys.path` plugin model**
    - Comment referenced the old `pip install --target deps/` flow that no longer exists.
    - Fix applied: reworded to describe current model (pip install into running Python environment).
+
+---
+
+## 2026-04-15 — `PR #20: build: replace PyInstaller with embedded Python for Windows` — review run 1
+
+
+
+<details>
+<summary>♻️ Duplicate comments (2)</summary><blockquote>
+
+<details>
+<summary>main.py (1)</summary><blockquote>
+
+`399-414`: _⚠️ Potential issue_ | _🟠 Major_
+
+**Flatpak still resolves plugins into the bundled app tree.**
+
+This only distinguishes the embedded-Windows layout from source layout. The Linux release is still a Flatpak, so `_get_plugins_dir()` will resolve next to the frozen bundle, and `_PluginInstallWorker` then tries to create/copy plugin files there before `_install_deps()` runs. In Flatpak, the app bundle under `/app` is read-only, while per-user data belongs under `$XDG_DATA_HOME` / `~/.var/app/$FLATPAK_ID/data`, so plugin install remains broken on Linux. Return a per-user writable path when `FLATPAK_ID` is set, or disable plugin installation in that mode. ([docs.flatpak.org](https://docs.flatpak.org/zh-cn/latest/sandbox-permissions.html?utm_source=openai))
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@main.py` around lines 399 - 414, The _get_plugins_dir function currently only
+switches between embedded and source layouts and can resolve to the read-only
+Flatpak bundle; update _get_plugins_dir to detect Flatpak by checking the
+FLATPAK_ID environment variable and return a writable per-user plugins path
+(prefer XDG_DATA_HOME/plugins or fallback to
+~/.var/app/{FLATPAK_ID}/data/plugins) when FLATPAK_ID is set, or alternatively
+return None/raise so _PluginInstallWorker/_install_deps know to skip plugin
+installation in Flatpak mode; ensure references to _PluginInstallWorker and
+_install_deps handle the new None/skip behavior if you choose that route.
+```
+
+</details>
+
+</blockquote></details>
+<details>
+<summary>.github/workflows/build-release.yml (1)</summary><blockquote>
+
+`35-76`: _⚠️ Potential issue_ | _🟠 Major_
+
+**Pin the pip bootstrap input.**
+
+`python -m pip install --target ... pip` still pulls whatever stable `pip` release PyPI serves on build day, and the `python` binary itself comes from the mutable `windows-latest` image. That makes the Windows installer drift over time even when the repo hasn’t changed. Please bootstrap from a pinned wheel or at least a pinned `pip==...` plus hash, and use a specific runner/interpreter for that download step. GitHub notes that `-latest` images migrate over time and recommends `actions/setup-python` for consistent behavior; pip installs stable releases by default when no version is specified. ([github.com](https://github.com/actions/runner-images?utm_source=openai))
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In @.github/workflows/build-release.yml around lines 35 - 76, The bootstrap step
+in the build-windows job currently runs "python -m pip install --target
+runtime\Lib\site-packages --no-deps pip" without a pinned pip version or hash
+and relies on the mutable windows-latest image; change the "Bootstrap pip into
+embedded Python" step so it installs a specific pip release (e.g. pip==23.2.1)
+with a pinned hash or installs from a vendored wheel file instead of an unpinned
+PyPI install, and ensure the runner/interpreter is fixed by adding or using
+actions/setup-python to pin the Python runtime before running
+runtime\python.exe; update the commands referenced (the install invocation and
+the runtime\python.exe -m pip --version check) to reflect the pinned artifact
+and verify its checksum.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Duplicate comments:
+In @.github/workflows/build-release.yml:
+- Around line 35-76: The bootstrap step in the build-windows job currently runs
+"python -m pip install --target runtime\Lib\site-packages --no-deps pip" without
+a pinned pip version or hash and relies on the mutable windows-latest image;
+change the "Bootstrap pip into embedded Python" step so it installs a specific
+pip release (e.g. pip==23.2.1) with a pinned hash or installs from a vendored
+wheel file instead of an unpinned PyPI install, and ensure the
+runner/interpreter is fixed by adding or using actions/setup-python to pin the
+Python runtime before running runtime\python.exe; update the commands referenced
+(the install invocation and the runtime\python.exe -m pip --version check) to
+reflect the pinned artifact and verify its checksum.
+
+In `@main.py`:
+- Around line 399-414: The _get_plugins_dir function currently only switches
+between embedded and source layouts and can resolve to the read-only Flatpak
+bundle; update _get_plugins_dir to detect Flatpak by checking the FLATPAK_ID
+environment variable and return a writable per-user plugins path (prefer
+XDG_DATA_HOME/plugins or fallback to ~/.var/app/{FLATPAK_ID}/data/plugins) when
+FLATPAK_ID is set, or alternatively return None/raise so
+_PluginInstallWorker/_install_deps know to skip plugin installation in Flatpak
+mode; ensure references to _PluginInstallWorker and _install_deps handle the new
+None/skip behavior if you choose that route.
+```
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `c3f34243-fac6-441b-9efe-a9835341f695`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 0497fc59fac356810658f46cc56a54a059f686f6 and 1c57a11293dbb3c97308bfde1dbe07726654b5fb.
+
+</details>
+
+<details>
+<summary>⛔ Files ignored due to path filters (1)</summary>
+
+* `.claude/S&P.md` is excluded by `!.claude/S&P.md`
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (6)</summary>
+
+* `.github/workflows/build-release.yml`
+* `.gitignore`
+* `build_scripts/JobDocs.spec`
+* `launcher/launcher.c`
+* `launcher/launcher.rc`
+* `main.py`
+
+</details>
+
+<details>
+<summary>✅ Files skipped from review due to trivial changes (2)</summary>
+
+* .gitignore
+* launcher/launcher.rc
+
+</details>
+
+<details>
+<summary>🚧 Files skipped from review as they are similar to previous changes (1)</summary>
+
+* build_scripts/JobDocs.spec
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
