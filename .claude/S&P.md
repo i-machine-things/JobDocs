@@ -4547,3 +4547,102 @@ Reviewing files that changed from the base of the PR and between 0497fc59fac3568
    - `python -m pip install ... pip` pulls whatever pip PyPI serves on build day.
    - System `python` comes from the mutable `windows-latest` image.
    - Fix applied: added `actions/setup-python@v5` step (pinned to `python-version: '3.12'`); pinned pip to `pip==24.3.1` in the install command.
+
+---
+
+## 2026-04-15 — `PR #20: build: replace PyInstaller with embedded Python for Windows` — review run 2
+
+**Actionable comments posted: 2**
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Inline comments:
+In `@main.py`:
+- Around line 580-585: The success message in _on_plugin_install_success
+incorrectly promises the plugin will load even when dep_warning is set; update
+the messaging so that when dep_warning is truthy (requirements skipped/failed)
+the dialog text says the plugin files were copied but the plugin may not load
+until dependencies are resolved and include the dep_warning details (use
+QMessageBox.warning with msg + dep_warning), while when dep_warning is falsy
+keep the original "Restart JobDocs to load it." wording (use
+QMessageBox.information); reference function _on_plugin_install_success and
+variables module_name, dest, dep_warning to locate and change the conditional
+message text accordingly.
+- Around line 57-76: The two user-facing instructions advising "pip install -r
+\"{req_file}\"" should be changed to recommend invoking pip with the current
+interpreter to avoid PATH/venv confusion; update the Flatpak message and the
+failure message to instruct users to run the installer via sys.executable (e.g.
+use the interpreter-qualified form: <sys.executable> -m pip install -r
+"{req_file}") so the guidance is accurate; locate the strings near the Flatpak
+branch (uses os.getenv('FLATPAK_ID') and req_file) and the subprocess
+error-handling block (uses subprocess.run, result.returncode, and err) and
+replace the bare "pip install -r ..." instructions with the
+interpreter-qualified form using sys.executable.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix (Beta)</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {"checkboxId": "4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9"} --> Push a commit to this branch (recommended)
+- [ ] <!-- {"checkboxId": "ff5b1114-7d8c-49e6-8ac1-43f82af23a33"} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `531f725e-fb26-4374-a1a5-b6a39b9ab6b7`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 1c57a11293dbb3c97308bfde1dbe07726654b5fb and 3168a7d190279d965f118367178a6ea8b9b17017.
+
+</details>
+
+<details>
+<summary>⛔ Files ignored due to path filters (1)</summary>
+
+* `.claude/S&P.md` is excluded by `!.claude/S&P.md`
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (2)</summary>
+
+* `.github/workflows/build-release.yml`
+* `main.py`
+
+</details>
+
+<details>
+<summary>🚧 Files skipped from review as they are similar to previous changes (1)</summary>
+
+* .github/workflows/build-release.yml
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
