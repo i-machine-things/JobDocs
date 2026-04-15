@@ -15,7 +15,7 @@ from shared.utils import (
 # ---------------------------------------------------------------------------
 
 class TestIsBlueprintFile:
-    EXTS = ['.pdf', '.dwg', '.dxf']
+    EXTS = ('.pdf', '.dwg', '.dxf')
 
     def test_matching_extension(self):
         assert is_blueprint_file('drawing.pdf', self.EXTS) is True
