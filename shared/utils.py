@@ -8,6 +8,7 @@ import os
 import platform
 import shutil
 import re
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -200,6 +201,17 @@ def open_folder(path: str) -> Tuple[bool, Optional[str]]:
         return False, f"Permission denied: {path}"
     except Exception as e:
         return False, f"Failed to open folder: {e}"
+
+
+def print_files(paths: List[str]) -> None:
+    """Send each file to the OS print handler (opens the system print dialog)."""
+    for path in paths:
+        if not os.path.isfile(path):
+            continue
+        if platform.system() == 'Windows':
+            os.startfile(path, 'print')  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(['lp', path])
 
 
 def get_next_number(history: Dict[str, Any], entry_type: str, start_number: int = 10000) -> str:
