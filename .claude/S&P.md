@@ -5344,3 +5344,18 @@ Reviewing files that changed from the base of the PR and between 31d95fdc9858f9d
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+## 2026-04-16 — `shared/utils.py`, `shared/widgets.py` (PR #24 — batch print)
+
+**Review:** CodeRabbit flagged redundant local `import subprocess` inside `open_folder()` and S603/S607 subprocess security warnings for bare `['lp', path]` call without verifying `lp` availability.
+**Result:** Removed redundant local import; guarded `lp` calls with `shutil.which('lp')` in both `utils.py` and `widgets.py`.
+
+### Findings
+
+1. **Redundant local import**
+   - `import subprocess` inside `open_folder()` duplicated the module-level import added when `print_files` was introduced
+   - Removed the local import
+
+2. **S607 — subprocess called without full path verification**
+   - `subprocess.Popen(['lp', path])` could fail silently on systems without `lp`
+   - Fixed: `lp = shutil.which('lp'); if lp: Popen([lp, path])`

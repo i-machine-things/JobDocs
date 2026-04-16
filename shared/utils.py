@@ -186,7 +186,6 @@ def open_folder(path: str) -> Tuple[bool, Optional[str]]:
     Returns:
         Tuple of (success, error_message)
     """
-    import subprocess
     try:
         if platform.system() == "Windows":
             os.startfile(path)
@@ -211,7 +210,9 @@ def print_files(paths: List[str]) -> None:
         if platform.system() == 'Windows':
             os.startfile(path, 'print')  # type: ignore[attr-defined]
         else:
-            subprocess.Popen(['lp', path])
+            lp = shutil.which('lp')
+            if lp:
+                subprocess.Popen([lp, path])
 
 
 def get_next_number(history: Dict[str, Any], entry_type: str, start_number: int = 10000) -> str:

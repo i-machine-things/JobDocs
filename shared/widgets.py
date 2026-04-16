@@ -1465,8 +1465,10 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
         if platform.system() == 'Windows':
             os.startfile(path, 'print')  # type: ignore[attr-defined]
         else:
-            import subprocess
-            subprocess.Popen(['lp', path])
+            import subprocess as _sp
+            lp = shutil.which('lp')
+            if lp:
+                _sp.Popen([lp, path])
 
 
 def attach_file_preview(
