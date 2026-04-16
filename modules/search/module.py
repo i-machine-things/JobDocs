@@ -23,7 +23,8 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6 import uic
 
 from core.base_module import BaseModule
-from shared.utils import open_folder, print_files
+from shared.utils import open_folder
+from shared.widgets import print_files_with_dialog
 
 
 def _is_hidden_file(full_path: str, name: str) -> bool:
@@ -773,7 +774,7 @@ class SearchModule(BaseModule):
             if os.path.isfile(item.data(Qt.ItemDataRole.UserRole) or '')
         ]
         if paths:
-            print_files(paths)
+            print_files_with_dialog(paths, self._widget, self.app_context)
 
     def _get_customer_bp_info(self):
         """Return (customer_name, blueprints_dir) for the currently selected search result."""

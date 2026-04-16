@@ -21,10 +21,10 @@ from PyQt6 import uic
 from datetime import datetime
 
 from core.base_module import BaseModule
-from shared.widgets import DropZone, JobSearchDialog, DrawingSearchDialog, FilePreviewWidget, attach_file_preview
+from shared.widgets import DropZone, JobSearchDialog, DrawingSearchDialog, FilePreviewWidget, attach_file_preview, print_files_with_dialog
 from shared.utils import (
     is_blueprint_file, parse_job_numbers, create_file_link,
-    sanitize_filename, open_folder, get_next_number, print_files
+    sanitize_filename, open_folder, get_next_number
 )
 
 
@@ -315,7 +315,7 @@ class JobModule(BaseModule):
         rows = sorted({i.row() for i in self.job_files_list.selectedIndexes()})
         paths = [self.job_files[r] for r in rows if 0 <= r < len(self.job_files)]
         if paths:
-            print_files(paths)
+            print_files_with_dialog(paths, self._widget, self.app_context)
 
     # ==================== Create New Tab: Job Creation ====================
 
@@ -774,7 +774,7 @@ class JobModule(BaseModule):
         rows = sorted({i.row() for i in self.add_files_list.selectedIndexes()})
         paths = [self.add_files[r] for r in rows if 0 <= r < len(self.add_files)]
         if paths:
-            print_files(paths)
+            print_files_with_dialog(paths, self._widget, self.app_context)
 
     def clear_add_files(self):
         """Clear all files from add files list"""
