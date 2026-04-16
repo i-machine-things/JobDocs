@@ -1409,7 +1409,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
             provider.add_files_to_list(paths)
             return
     import platform
-    from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
+    from PyQt6.QtPrintSupport import QPrinter
     from PyQt6.QtGui import QPainter, QImage
     from PyQt6.QtCore import QRectF
 
@@ -1419,47 +1419,65 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
     renderable = [p for p in paths if os.path.isfile(p) and Path(p).suffix.lower() in _RENDERABLE]
     fallback   = [p for p in paths if os.path.isfile(p) and Path(p).suffix.lower() not in _RENDERABLE]
 
+    cancelled = False
     if renderable:
-        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        dlg = QPrintDialog(printer, parent)
-        if dlg.exec() != QPrintDialog.DialogCode.Accepted:
-            return  # cancelled — skip fallback too
+        # Pre-check fitz so the paintRequested closure doesn't import on every call
+        try:
+            import fitz as _fitz  # pymupdf
+        except ImportError:
+            _fitz = None
+            # PDFs can't be previewed — move them to OS fallback
+            for _p in list(renderable):
+                if Path(_p).suffix.lower() == '.pdf':
+                    fallback.append(_p)
+                    renderable.remove(_p)
 
-        painter = QPainter(printer)
-        page_rect = QRectF(painter.viewport())
-        first = True
+        if renderable:
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
 
-        for path in renderable:
-            ext = Path(path).suffix.lower()
-            if ext == '.pdf':
-                try:
-                    import fitz  # pymupdf
-                    doc = fitz.open(path)
-                    for page_num in range(doc.page_count):
+            def do_render(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
+                painter = QPainter(pr)
+                page_rect = QRectF(painter.viewport())
+                first = True
+                for path in renderable:
+                    ext = Path(path).suffix.lower()
+                    if ext == '.pdf' and _fitz is not None:
+                        doc = _fitz.open(path)
+                        for page_num in range(doc.page_count):
+                            if not first:
+                                pr.newPage()
+                                page_rect = QRectF(painter.viewport())
+                            first = False
+                            pg = doc[page_num]
+                            zoom = 200 / 72  # render at 200 DPI
+                            pix = pg.get_pixmap(
+                                matrix=_fitz.Matrix(zoom, zoom), alpha=False
+                            )
+                            samples = bytes(pix.samples)
+                            img = QImage(
+                                samples, pix.width, pix.height,
+                                pix.stride, QImage.Format.Format_RGB888,
+                            ).copy()
+                            _draw_image_fitted(painter, img, page_rect)
+                        doc.close()
+                    else:
                         if not first:
-                            printer.newPage()
+                            pr.newPage()
                             page_rect = QRectF(painter.viewport())
                         first = False
-                        pg = doc[page_num]
-                        zoom = 200 / 72  # render at 200 DPI
-                        pix = pg.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
-                        samples = bytes(pix.samples)
-                        img = QImage(samples, pix.width, pix.height,
-                                     pix.stride, QImage.Format.Format_RGB888).copy()
-                        _draw_image_fitted(painter, img, page_rect)
-                    doc.close()
-                except ImportError:
-                    fallback.append(path)
-            else:
-                if not first:
-                    printer.newPage()
-                    page_rect = QRectF(painter.viewport())
-                first = False
-                img = QImage(path)
-                if not img.isNull():
-                    _draw_image_fitted(painter, img, page_rect)
+                        img = QImage(path)
+                        if not img.isNull():
+                            _draw_image_fitted(painter, img, page_rect)
+                painter.end()
 
-        painter.end()
+            from PyQt6.QtPrintSupport import QPrintPreviewDialog
+            preview = QPrintPreviewDialog(printer, parent)
+            preview.paintRequested.connect(do_render)
+            if preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
+                cancelled = True
+
+    if cancelled:
+        return
 
     import subprocess as _sp
     lp = shutil.which('lp') if platform.system() != 'Windows' else None
