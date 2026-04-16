@@ -4,6 +4,7 @@ Shared utility functions for JobDocs
 Common helper functions used across multiple modules.
 """
 
+import logging
 import os
 import platform
 import shutil
@@ -11,6 +12,8 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def get_config_dir() -> Path:
@@ -213,6 +216,8 @@ def print_files(paths: List[str]) -> None:
             lp = shutil.which('lp')
             if lp:
                 subprocess.Popen([lp, path])
+            else:
+                logger.warning("print_files: 'lp' not found — cannot print %s", path)
 
 
 def get_next_number(history: Dict[str, Any], entry_type: str, start_number: int = 10000) -> str:

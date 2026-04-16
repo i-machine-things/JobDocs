@@ -1461,14 +1461,25 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
 
         painter.end()
 
+    import subprocess as _sp
+    lp = shutil.which('lp') if platform.system() != 'Windows' else None
+    unprinted: list[str] = []
+
     for path in fallback:
         if platform.system() == 'Windows':
             os.startfile(path, 'print')  # type: ignore[attr-defined]
+        elif lp:
+            _sp.Popen([lp, path])
         else:
-            import subprocess as _sp
-            lp = shutil.which('lp')
-            if lp:
-                _sp.Popen([lp, path])
+            unprinted.append(os.path.basename(path))
+
+    if unprinted:
+        from PyQt6.QtWidgets import QMessageBox
+        names = '\n'.join(f'  • {n}' for n in unprinted)
+        QMessageBox.warning(
+            parent, "Print",
+            f"The following file(s) could not be printed — 'lp' was not found on this system:\n\n{names}"
+        )
 
 
 def attach_file_preview(
