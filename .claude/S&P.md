@@ -5104,3 +5104,243 @@ Reviewing files that changed from the base of the PR and between 9b944bf956ca932
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-16 — `PR #24: feat: batch print drawings from job/quote/search` — review run 1
+
+
+
+<details>
+<summary>🧹 Nitpick comments (3)</summary><blockquote>
+
+<details>
+<summary>shared/utils.py (2)</summary><blockquote>
+
+`189-189`: **Redundant import.**
+
+`subprocess` is now imported at module level (line 11), making this local import unnecessary.
+
+
+<details>
+<summary>🧹 Remove redundant import</summary>
+
+```diff
+ def open_folder(path: str) -> Tuple[bool, Optional[str]]:
+     """
+     Open a folder in the OS file browser.
+ 
+     Args:
+         path: Path to the folder to open
+ 
+     Returns:
+         Tuple of (success, error_message)
+     """
+-    import subprocess
+     try:
+         if platform.system() == "Windows":
+```
+</details>
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/utils.py` at line 189, There is a redundant local "import subprocess"
+that duplicates the module-level import; remove the local import statement so
+the code uses the existing top-level subprocess import (search for the local
+"import subprocess" occurrence in shared/utils.py and delete it, leaving any
+functions or code that reference subprocess unchanged).
+```
+
+</details>
+
+---
+
+`206-214`: **Silent failures when printing files.**
+
+The function silently skips non-files and doesn't report errors if `os.startfile()` or `lp` fails. Users won't know if printing failed (e.g., `lp` not installed on Linux, permission denied, or unsupported file type).
+
+Consider returning status information or raising exceptions for critical failures.
+
+
+<details>
+<summary>♻️ Suggested improvement with basic error handling</summary>
+
+```diff
+-def print_files(paths: List[str]) -> None:
+-    """Send each file to the OS print handler (opens the system print dialog)."""
+-    for path in paths:
+-        if not os.path.isfile(path):
+-            continue
+-        if platform.system() == 'Windows':
+-            os.startfile(path, 'print')  # type: ignore[attr-defined]
+-        else:
+-            subprocess.Popen(['lp', path])
++def print_files(paths: List[str]) -> Tuple[int, List[str]]:
++    """Send each file to the OS print handler (opens the system print dialog).
++    
++    Returns:
++        Tuple of (success_count, list of error messages)
++    """
++    success = 0
++    errors = []
++    for path in paths:
++        if not os.path.isfile(path):
++            errors.append(f"Not a file: {path}")
++            continue
++        try:
++            if platform.system() == 'Windows':
++                os.startfile(path, 'print')  # type: ignore[attr-defined]
++            else:
++                subprocess.Popen(['lp', path])
++            success += 1
++        except FileNotFoundError:
++            errors.append(f"Print command not found (is 'lp' installed?)")
++        except OSError as e:
++            errors.append(f"Failed to print {path}: {e}")
++    return success, errors
+```
+</details>
+
+Note: The static analysis warnings (S603, S607) about subprocess security are low-risk here since paths originate from user-selected files that pass `os.path.isfile()` validation, but consider using `shutil.which('lp')` to verify availability before attempting to print on non-Windows systems.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/utils.py` around lines 206 - 214, The print_files function currently
+swallows non-files and printing errors; update print_files to validate
+availability of the print backend and report failures by returning per-path
+status or raising on critical errors: inside print_files, for each path
+(function print_files), if not os.path.isfile(path) record a failure status (or
+raise if that should be fatal); on Windows wrap os.startfile(path, 'print') in a
+try/except and capture/return the exception information; on non-Windows first
+check shutil.which('lp') and if missing return an informative failure for every
+path, otherwise call subprocess.Popen(['lp', path]) but capture exceptions (and
+subprocess errors) and return or raise the error; ensure the function signature
+and callers are adjusted to accept a mapping/list of results (e.g., path ->
+success/error) or document which exceptions are raised.
+```
+
+</details>
+
+</blockquote></details>
+<details>
+<summary>modules/search/module.py (1)</summary><blockquote>
+
+`759-764`: **Minor UX consideration: Context menu visibility depends on clicked item.**
+
+The "Print Selected" action only appears when right-clicking on a file item (line 759: `if is_file:`). If a user has multiple files selected but right-clicks on a folder row, the print option won't appear.
+
+This is a minor edge case and the current behavior is acceptable, but you could consider showing "Print Selected" whenever there's at least one file in the selection.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@modules/search/module.py` around lines 759 - 764, The context menu currently
+adds "Print Selected" only when the clicked row is a file (controlled by
+is_file); change this to show the action whenever the current selection contains
+at least one file. Inside the context-menu construction (the block that checks
+is_file and adds print_action), replace the is_file-only check with a
+selection-based check that inspects the view/model selection (use the same
+selection APIs you already use elsewhere in this class) to determine if any
+selected item is a file, and if so call menu.addAction("Print Selected") and
+connect it to _print_selected_folder_files; keep the existing "Blueprints Path"
+logic and lambda to _blueprints_path_action(path) unchanged.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Nitpick comments:
+In `@modules/search/module.py`:
+- Around line 759-764: The context menu currently adds "Print Selected" only
+when the clicked row is a file (controlled by is_file); change this to show the
+action whenever the current selection contains at least one file. Inside the
+context-menu construction (the block that checks is_file and adds print_action),
+replace the is_file-only check with a selection-based check that inspects the
+view/model selection (use the same selection APIs you already use elsewhere in
+this class) to determine if any selected item is a file, and if so call
+menu.addAction("Print Selected") and connect it to _print_selected_folder_files;
+keep the existing "Blueprints Path" logic and lambda to
+_blueprints_path_action(path) unchanged.
+
+In `@shared/utils.py`:
+- Line 189: There is a redundant local "import subprocess" that duplicates the
+module-level import; remove the local import statement so the code uses the
+existing top-level subprocess import (search for the local "import subprocess"
+occurrence in shared/utils.py and delete it, leaving any functions or code that
+reference subprocess unchanged).
+- Around line 206-214: The print_files function currently swallows non-files and
+printing errors; update print_files to validate availability of the print
+backend and report failures by returning per-path status or raising on critical
+errors: inside print_files, for each path (function print_files), if not
+os.path.isfile(path) record a failure status (or raise if that should be fatal);
+on Windows wrap os.startfile(path, 'print') in a try/except and capture/return
+the exception information; on non-Windows first check shutil.which('lp') and if
+missing return an informative failure for every path, otherwise call
+subprocess.Popen(['lp', path]) but capture exceptions (and subprocess errors)
+and return or raise the error; ensure the function signature and callers are
+adjusted to accept a mapping/list of results (e.g., path -> success/error) or
+document which exceptions are raised.
+```
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `cb1eaf8e-bef8-4c5d-ab08-127c7fc2b616`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 31d95fdc9858f9d0986f681c14cb7a3766eea4d3 and 7221b1e56b43f6e1f7f36c24e12d20cfa31c7d47.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (6)</summary>
+
+* `modules/job/module.py`
+* `modules/job/ui/job_tab.ui`
+* `modules/quote/module.py`
+* `modules/quote/ui/quote_tab.ui`
+* `modules/search/module.py`
+* `shared/utils.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
