@@ -1438,49 +1438,49 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
         if renderable:
             printer = QPrinter(QPrinter.PrinterMode.HighResolution)
 
+            # Rasterise all pages once upfront so do_render is a fast blit.
+            # This keeps the preview responsive on orientation/zoom changes.
+            page_cache: list[QImage] = []
+            for path in renderable:
+                ext = Path(path).suffix.lower()
+                if ext == '.pdf' and _fitz is not None:
+                    try:
+                        doc = _fitz.open(path)
+                        try:
+                            for page_num in range(doc.page_count):
+                                pg = doc[page_num]
+                                zoom = 200 / 72  # 200 DPI
+                                pix = pg.get_pixmap(
+                                    matrix=_fitz.Matrix(zoom, zoom), alpha=False
+                                )
+                                samples = bytes(pix.samples)
+                                page_cache.append(
+                                    QImage(
+                                        samples, pix.width, pix.height,
+                                        pix.stride, QImage.Format.Format_RGB888,
+                                    ).copy()
+                                )
+                        finally:
+                            doc.close()
+                    except Exception:
+                        logger.warning(
+                            "print_files_with_dialog: failed to pre-render PDF %s",
+                            path, exc_info=True,
+                        )
+                else:
+                    img = QImage(path)
+                    if not img.isNull():
+                        page_cache.append(img)
+
             def do_render(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
                 painter = QPainter(pr)
                 try:
                     page_rect = QRectF(painter.viewport())
-                    first = True
-                    for path in renderable:
-                        ext = Path(path).suffix.lower()
-                        if ext == '.pdf' and _fitz is not None:
-                            try:
-                                doc = _fitz.open(path)
-                                try:
-                                    for page_num in range(doc.page_count):
-                                        if not first:
-                                            pr.newPage()
-                                            page_rect = QRectF(painter.viewport())
-                                        first = False
-                                        pg = doc[page_num]
-                                        zoom = 200 / 72  # render at 200 DPI
-                                        pix = pg.get_pixmap(
-                                            matrix=_fitz.Matrix(zoom, zoom), alpha=False
-                                        )
-                                        samples = bytes(pix.samples)
-                                        img = QImage(
-                                            samples, pix.width, pix.height,
-                                            pix.stride, QImage.Format.Format_RGB888,
-                                        ).copy()
-                                        _draw_image_fitted(painter, img, page_rect)
-                                finally:
-                                    doc.close()
-                            except Exception:
-                                logger.warning(
-                                    "do_render: failed to render PDF %s", path,
-                                    exc_info=True,
-                                )
-                        else:
-                            img = QImage(path)
-                            if img.isNull():
-                                continue
-                            if not first:
-                                pr.newPage()
-                                page_rect = QRectF(painter.viewport())
-                            first = False
-                            _draw_image_fitted(painter, img, page_rect)
+                    for i, img in enumerate(page_cache):
+                        if i > 0:
+                            pr.newPage()
+                            page_rect = QRectF(painter.viewport())
+                        _draw_image_fitted(painter, img, page_rect)
                 finally:
                     painter.end()
 
