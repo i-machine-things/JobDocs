@@ -1438,9 +1438,13 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
         if renderable:
             printer = QPrinter(QPrinter.PrinterMode.HighResolution)
 
-            # Rasterise all pages once upfront so do_render is a fast blit.
-            # This keeps the preview responsive on orientation/zoom changes.
-            page_cache: list[QImage] = []
+            # Pre-cache at screen DPI (96) so preview blitting is fast — the
+            # overview/facing-pages toolbar buttons re-emit paintRequested on
+            # every click, and large 200 DPI images caused GUI freezes.
+            # Actual printing re-renders from fitz at 200 DPI after the user
+            # confirms the printer dialog.
+            _PREVIEW_DPI = 96
+            preview_cache: list[QImage] = []
             for path in renderable:
                 ext = Path(path).suffix.lower()
                 if ext == '.pdf' and _fitz is not None:
@@ -1449,12 +1453,14 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                         try:
                             for page_num in range(doc.page_count):
                                 pg = doc[page_num]
-                                zoom = 200 / 72  # 200 DPI
                                 pix = pg.get_pixmap(
-                                    matrix=_fitz.Matrix(zoom, zoom), alpha=False
+                                    matrix=_fitz.Matrix(
+                                        _PREVIEW_DPI / 72, _PREVIEW_DPI / 72
+                                    ),
+                                    alpha=False,
                                 )
                                 samples = bytes(pix.samples)
-                                page_cache.append(
+                                preview_cache.append(
                                     QImage(
                                         samples, pix.width, pix.height,
                                         pix.stride, QImage.Format.Format_RGB888,
@@ -1470,13 +1476,13 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 else:
                     img = QImage(path)
                     if not img.isNull():
-                        page_cache.append(img)
+                        preview_cache.append(img)
 
-            def do_render(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
+            def do_render_preview(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
                 painter = QPainter(pr)
                 try:
                     page_rect = QRectF(painter.viewport())
-                    for i, img in enumerate(page_cache):
+                    for i, img in enumerate(preview_cache):
                         if i > 0:
                             pr.newPage()
                             page_rect = QRectF(painter.viewport())
@@ -1484,11 +1490,80 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 finally:
                     painter.end()
 
-            from PyQt6.QtPrintSupport import QPrintPreviewDialog
-            preview = QPrintPreviewDialog(printer, parent)
-            preview.paintRequested.connect(do_render)
-            if preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
+            from PyQt6.QtPrintSupport import QPrintPreviewWidget, QPrintDialog
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
+
+            _dlg = QDialog(parent)
+            _dlg.setWindowTitle("Print Preview")
+            _dlg.resize(900, 700)
+            _dlg_layout = QVBoxLayout(_dlg)
+            _dlg_layout.setContentsMargins(0, 0, 0, 6)
+            _preview_widget = QPrintPreviewWidget(printer, _dlg)
+            _dlg_layout.addWidget(_preview_widget)
+            _btn_box = QDialogButtonBox(_dlg)
+            _btn_box.addButton("Print\u2026", QDialogButtonBox.ButtonRole.AcceptRole)
+            _btn_box.addButton(QDialogButtonBox.StandardButton.Cancel)
+            _btn_box.accepted.connect(_dlg.accept)
+            _btn_box.rejected.connect(_dlg.reject)
+            _dlg_layout.addWidget(_btn_box)
+            _preview_widget.paintRequested.connect(do_render_preview)
+
+            if _dlg.exec() != QDialog.DialogCode.Accepted:
                 cancelled = True
+            else:
+                # User confirmed — show printer dialog then render at full quality
+                _print_dlg = QPrintDialog(printer, parent)
+                if _print_dlg.exec() != QPrintDialog.DialogCode.Accepted:
+                    cancelled = True
+                else:
+                    _painter = QPainter(printer)
+                    try:
+                        _page_rect = QRectF(_painter.viewport())
+                        _first = True
+                        for path in renderable:
+                            ext = Path(path).suffix.lower()
+                            if ext == '.pdf' and _fitz is not None:
+                                try:
+                                    doc = _fitz.open(path)
+                                    try:
+                                        for page_num in range(doc.page_count):
+                                            if not _first:
+                                                printer.newPage()
+                                                _page_rect = QRectF(_painter.viewport())
+                                            _first = False
+                                            pg = doc[page_num]
+                                            pix = pg.get_pixmap(
+                                                matrix=_fitz.Matrix(
+                                                    200 / 72, 200 / 72
+                                                ),
+                                                alpha=False,
+                                            )
+                                            samples = bytes(pix.samples)
+                                            img = QImage(
+                                                samples, pix.width, pix.height,
+                                                pix.stride,
+                                                QImage.Format.Format_RGB888,
+                                            ).copy()
+                                            _draw_image_fitted(_painter, img, _page_rect)
+                                    finally:
+                                        doc.close()
+                                except Exception:
+                                    logger.warning(
+                                        "print_files_with_dialog: failed to render"
+                                        " PDF %s for printing",
+                                        path, exc_info=True,
+                                    )
+                            else:
+                                img = QImage(path)
+                                if img.isNull():
+                                    continue
+                                if not _first:
+                                    printer.newPage()
+                                    _page_rect = QRectF(_painter.viewport())
+                                _first = False
+                                _draw_image_fitted(_painter, img, _page_rect)
+                    finally:
+                        _painter.end()
 
     if cancelled:
         return
