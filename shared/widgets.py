@@ -97,10 +97,22 @@ class DropZone(QFrame):
         """Return True if this drag is from the classic Outlook desktop app."""
         return 'application/x-qt-windows-mime;value="RenPrivateMessages"' in mime_data.formats()
 
+    @staticmethod
+    def _is_new_outlook(mime_data) -> bool:
+        """Return True if this drag originates from New Outlook / Outlook Web (WebView2)."""
+        try:
+            taint = bytes(mime_data.data(
+                'application/x-qt-windows-mime;value="chromium/x-renderer-taint"'
+            ))
+            return bool(taint and b'outlook' in taint.lower())
+        except Exception:
+            return False
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         mime = event.mimeData()
         print(f"[DropZone] dragEnter formats: {mime.formats()}", flush=True)
-        if mime.hasUrls() or self._outlook_descriptor_format(mime) or self._is_classic_outlook(mime):
+        if (mime.hasUrls() or self._outlook_descriptor_format(mime)
+                or self._is_classic_outlook(mime) or self._is_new_outlook(mime)):
             event.acceptProposedAction()
             self.setStyleSheet("""
                 DropZone {
@@ -165,22 +177,21 @@ class DropZone(QFrame):
 
         descriptor_fmt = self._outlook_descriptor_format(mime)
 
-        # Detect drag from Outlook Web (browser-based O365).
-        # Chrome withholds FileGroupDescriptorW from non-Shell drop targets, so Qt's
-        # MIME abstraction gets nothing.  We parse the Chromium custom MIME payload
-        # to get the Exchange item ID and retrieve the email via MAPI instead.
-        taint_data = b''
-        try:
-            taint_data = bytes(mime.data('application/x-qt-windows-mime;value="chromium/x-renderer-taint"'))
-        except Exception:
-            pass
-        is_outlook_web = bool(taint_data and b'outlook.office.com' in taint_data)
-
+        # Detect drag source
+        is_outlook_web = DropZone._is_new_outlook(mime)
         is_classic_outlook = DropZone._is_classic_outlook(mime) and not is_outlook_web
 
+        files: list = []
         if is_outlook_web:
             files = DropZone._handle_outlook_web_drop(mime)
-            if not files:
+            if not files and mime.hasUrls():
+                # Attachment drag from New Outlook: the Chromium taint is present
+                # but the MIME payload has no mail-row key (it's a file attachment,
+                # not an email row). Fall through to the CF_HDROP URL handler below.
+                print('[DropZone] New Outlook web-drop returned empty — '
+                      'falling back to hasUrls() for attachment drag', flush=True)
+                is_outlook_web = False
+            elif not files:
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(
                     self, 'Email Not Retrieved',
@@ -190,7 +201,7 @@ class DropZone(QFrame):
                     'Alternatively, save the email to disk (File → Save As) and '
                     'drop the file here.'
                 )
-        elif is_classic_outlook:
+        if not is_outlook_web and not files and is_classic_outlook:
             files = DropZone._handle_classic_outlook_drop(mime)
             if not files:
                 from PyQt6.QtWidgets import QMessageBox
@@ -201,7 +212,7 @@ class DropZone(QFrame):
                     'Alternatively, save the email to disk (File → Save As) and '
                     'drop the file here.'
                 )
-        elif mime.hasUrls():
+        if not files and not is_classic_outlook and mime.hasUrls():
             files = []
             for url in mime.urls():
                 local = url.toLocalFile()
@@ -218,10 +229,8 @@ class DropZone(QFrame):
                 else:
                     # Non-local URL (blob:, https:, etc.) — log and skip for now
                     print(f"[DropZone]   Skipping non-local URL: {url.toString()}", flush=True)
-        elif descriptor_fmt:
+        if not files and descriptor_fmt:
             files = DropZone._handle_outlook_drop(mime, descriptor_fmt)
-        else:
-            files = []
 
         print(f"[DropZone] emitting {len(files)} file(s)", flush=True)
         for f in files:
