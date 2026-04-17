@@ -1445,13 +1445,20 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     renderable.remove(_p)
 
         if renderable:
+            # Two separate QPrinter objects:
+            #   preview_printer — screen DPI (96), used by QPrintPreviewDialog.
+            #     The painter viewport is 96 DPI units so QPicture data is small
+            #     and overview/zoom toolbar interactions stay responsive.
+            #   print_printer  — HighResolution, configured by QPrintDialog and
+            #     used for the actual print job.
+            preview_printer = QPrinter()
+            preview_printer.setResolution(96)
             printer = QPrinter(QPrinter.PrinterMode.HighResolution)
 
-            # Pre-cache at 96 DPI so preview blits are instant.
-            # paintRequested fires on every zoom/view-mode change — large images
-            # caused 5+ second GUI freezes. The actual print job re-renders from
-            # fitz at 200 DPI (see _do_print below).
-            _PREVIEW_DPI = 96
+            # Pre-cache at 48 DPI. Each A4 page is ~397×561 px — small enough
+            # that QPicture serialisation and overview-mode replay are instant.
+            # The actual print job re-renders from fitz at 200 DPI.
+            _PREVIEW_DPI = 48
             preview_cache: list[QImage] = []
             for path in renderable:
                 ext = Path(path).suffix.lower()
@@ -1485,9 +1492,6 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     img = QImage(path)
                     if not img.isNull():
                         preview_cache.append(img)
-
-            # Flag: True only while the actual print job is being rendered
-            _printing: list[bool] = [False]
 
             def _render_to(pr: 'QPrinter', dpi: float) -> None:
                 """Render renderable files to pr at the given DPI."""
@@ -1538,30 +1542,28 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     _pa.end()
 
             def do_render(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
-                if _printing[0]:
-                    _render_to(pr, 200)
-                else:
-                    # Fast preview blit from 96 DPI cache
-                    _pa = QPainter(pr)
-                    try:
-                        _pr = QRectF(_pa.viewport())
-                        for i, img in enumerate(preview_cache):
-                            if i > 0:
-                                pr.newPage()
-                                _pr = QRectF(_pa.viewport())
-                            _draw_image_fitted(_pa, img, _pr)
-                    finally:
-                        _pa.end()
+                # Preview only — blit 48 DPI cache into the 96 DPI preview printer
+                _pa = QPainter(pr)
+                try:
+                    _pr = QRectF(_pa.viewport())
+                    for i, img in enumerate(preview_cache):
+                        if i > 0:
+                            pr.newPage()
+                            _pr = QRectF(_pa.viewport())
+                        _draw_image_fitted(_pa, img, _pr)
+                finally:
+                    _pa.end()
 
             from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrintDialog
             from PyQt6.QtPrintSupport import QPrintPreviewWidget
             from PyQt6.QtGui import QKeySequence, QAction
 
-            preview = QPrintPreviewDialog(printer, parent)
+            preview = QPrintPreviewDialog(preview_printer, parent)
             preview.paintRequested.connect(do_render)
 
-            # Intercept the built-in Print toolbar button so we can switch to
-            # 200 DPI rendering for the actual job without touching the preview.
+            # Intercept the built-in Print toolbar button so we can render the
+            # actual job at 200 DPI on the HighResolution printer, not the 96 DPI
+            # preview_printer.
             _pw = preview.findChild(QPrintPreviewWidget)
 
             def _do_print() -> None:
@@ -1570,7 +1572,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     return
                 _printing[0] = True
                 try:
-                    getattr(_pw, 'print')()  # QPrintPreviewWidget::print()
+                    _render_to(printer, 200)
                 finally:
                     _printing[0] = False
                 preview.accept()
