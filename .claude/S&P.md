@@ -6120,3 +6120,226 @@ Reviewing files that changed from the base of the PR and between 14c50c80b93b197
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-17 — `PR #25: feat: print preview dialog` — review run 3
+
+
+
+<details>
+<summary>🧹 Nitpick comments (3)</summary><blockquote>
+
+<details>
+<summary>shared/widgets.py (3)</summary><blockquote>
+
+`1556-1565`: **Dead code left from the refactor: `_pw` and `QPrintPreviewWidget` import are unused.**
+
+After moving printing to `_render_to(_print_printer, 200)` on a fresh `QPrinter`, `_pw` is no longer referenced anywhere in `_do_print` (no `_pw.print_()` call remains), and the `QPrintPreviewWidget` import at line 1557 is only used to look it up. Remove both to keep the intent clear.
+
+<details>
+<summary>♻️ Proposed cleanup</summary>
+
+```diff
+             from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrintDialog
+-            from PyQt6.QtPrintSupport import QPrintPreviewWidget
+             from PyQt6.QtGui import QKeySequence, QAction
+
+             preview = QPrintPreviewDialog(preview_printer, parent)
+             preview.paintRequested.connect(do_render)
+
+             # Intercept the built-in Print toolbar button so we can render at
+             # 200 DPI on a native HighResolution printer, not the PDF preview printer.
+-            _pw = preview.findChild(QPrintPreviewWidget)
+-
+             def _do_print() -> None:
+```
+</details>
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/widgets.py` around lines 1556 - 1565, The _do_print function contains
+dead code: the local variable _pw and the import QPrintPreviewWidget are no
+longer used after refactoring; remove the unused import line for
+QPrintPreviewWidget and delete the assignment "_pw =
+preview.findChild(QPrintPreviewWidget)" (and any references to _pw) in _do_print
+(where preview = QPrintPreviewDialog(...) and
+do_render/preview.paintRequested.connect are defined) so the function only keeps
+the active preview dialog and the new _render_to(_print_printer, 200) flow.
+```
+
+</details>
+
+---
+
+`1495-1554`: **Minor: `do_render` and `_render_to` duplicate the PDF/image dispatch loop.**
+
+`do_render` blits the 48 DPI cache while `_render_to` re-renders from source at 200 DPI. The PDF-vs-image branching, first-page/newPage bookkeeping, and `_draw_image_fitted` plumbing are otherwise structurally identical to the cache-building loop above. Not a correctness issue — `_render_to` is necessary because the cache is too low-res for print — but the three near-identical loops are a maintenance hazard. Consider factoring a helper like `_iter_pages(path, dpi) -> Iterable[QImage]` used by all three call sites.
+
+Also, for very large PDFs the 200 DPI re-render in `_render_to` runs synchronously on the GUI thread inside the print QAction handler, which will freeze the dialog until done. Fine for the common few-page case; worth a progress indicator or `QApplication.processEvents()` tick if large jobs become common.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/widgets.py` around lines 1495 - 1554, The three nearly-identical loops
+in _render_to, do_render and the cache-building code should be factored into a
+single helper generator (e.g. _iter_pages(path_or_paths, dpi) ->
+Iterable[QImage]) that encapsulates the PDF-vs-image branching, fitz usage, page
+iteration and QImage construction; update the cache-builder, _render_to (which
+will iterate _iter_pages(renderable, dpi)) and the preview code to consume that
+generator and keep page/newPage bookkeeping and _draw_image_fitted in the
+callers. In the helper, ensure resources (doc.close()) are handled in finally
+blocks and consider yielding occasionally and calling
+QApplication.processEvents() from _render_to when iterating large jobs to avoid
+UI freeze. Reference symbols: _render_to, do_render, _draw_image_fitted,
+preview_cache, renderable, and _fitz.
+```
+
+</details>
+
+---
+
+`1575-1587`: **Silent failure if the Print toolbar action doesn't match `StandardKey.Print` — defensive programming.**
+
+In Qt 6 / PyQt6, `QPrintPreviewDialog` reliably binds `QKeySequence.StandardKey.Print` (Ctrl+P) to its built-in Print toolbar `QAction`, and the action is discoverable via `findChildren(QAction)`. However, if this hook fails to install for any reason (e.g., future Qt changes, atypical dialog customization), `_do_print` is never wired up, leaving the user with silent failure: the Print button triggers the default PDF preview printer instead of real-printer output with no error or warning.
+
+Consider adding defensive tracking — either log a warning if the hook is not installed, or add an explicit Print button to the dialog button bar so the real-print path doesn't depend on shortcut discovery.
+
+<details>
+<summary>🛡️ Defensive: log if hook is not installed</summary>
+
+```diff
++            _hooked = False
+             for _act in preview.findChildren(QAction):
+                 if _act.shortcut().matches(
+                     QKeySequence(QKeySequence.StandardKey.Print)
+                 ) == QKeySequence.SequenceMatch.ExactMatch:
+                     try:
+                         _act.triggered.disconnect()
+                     except TypeError:
+                         pass
+                     _act.triggered.connect(_do_print)
++                    _hooked = True
+                     break
++            if not _hooked:
++                logger.warning(
++                    "print_files_with_dialog: could not locate Print toolbar "
++                    "action; toolbar Print will route through the PDF preview "
++                    "printer instead of a real printer."
++                )
+```
+</details>
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/widgets.py` around lines 1575 - 1587, The current loop that searches
+preview.findChildren(QAction) for an action whose shortcut matches
+QKeySequence.StandardKey.Print may fail silently and leave _do_print
+unconnected; update the QPrintPreviewDialog handling to be defensive: after the
+loop check whether _do_print was connected (e.g., track a flag like
+print_hook_installed) and if not, log a warning and/or add an explicit Print
+QAction/button to the dialog (or connect a newly created QAction to _do_print
+and add it to preview.buttonBox or toolbar) so the real-print path is always
+available; reference preview, _act, _do_print, findChildren(QAction), and
+QPrintPreviewDialog to locate the code to modify.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Nitpick comments:
+In `@shared/widgets.py`:
+- Around line 1556-1565: The _do_print function contains dead code: the local
+variable _pw and the import QPrintPreviewWidget are no longer used after
+refactoring; remove the unused import line for QPrintPreviewWidget and delete
+the assignment "_pw = preview.findChild(QPrintPreviewWidget)" (and any
+references to _pw) in _do_print (where preview = QPrintPreviewDialog(...) and
+do_render/preview.paintRequested.connect are defined) so the function only keeps
+the active preview dialog and the new _render_to(_print_printer, 200) flow.
+- Around line 1495-1554: The three nearly-identical loops in _render_to,
+do_render and the cache-building code should be factored into a single helper
+generator (e.g. _iter_pages(path_or_paths, dpi) -> Iterable[QImage]) that
+encapsulates the PDF-vs-image branching, fitz usage, page iteration and QImage
+construction; update the cache-builder, _render_to (which will iterate
+_iter_pages(renderable, dpi)) and the preview code to consume that generator and
+keep page/newPage bookkeeping and _draw_image_fitted in the callers. In the
+helper, ensure resources (doc.close()) are handled in finally blocks and
+consider yielding occasionally and calling QApplication.processEvents() from
+_render_to when iterating large jobs to avoid UI freeze. Reference symbols:
+_render_to, do_render, _draw_image_fitted, preview_cache, renderable, and _fitz.
+- Around line 1575-1587: The current loop that searches
+preview.findChildren(QAction) for an action whose shortcut matches
+QKeySequence.StandardKey.Print may fail silently and leave _do_print
+unconnected; update the QPrintPreviewDialog handling to be defensive: after the
+loop check whether _do_print was connected (e.g., track a flag like
+print_hook_installed) and if not, log a warning and/or add an explicit Print
+QAction/button to the dialog (or connect a newly created QAction to _do_print
+and add it to preview.buttonBox or toolbar) so the real-print path is always
+available; reference preview, _act, _do_print, findChildren(QAction), and
+QPrintPreviewDialog to locate the code to modify.
+```
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `7c64b8c9-b1cb-4931-be18-aaf7c40ac1b7`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between ebafdb7aa25511d2c2148b49c799eaf8f7226761 and f7811a9f9a44f31b9b76ddd3939d568877bfaeac.
+
+</details>
+
+<details>
+<summary>⛔ Files ignored due to path filters (1)</summary>
+
+* `.claude/S&P.md` is excluded by `!.claude/S&P.md`
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (1)</summary>
+
+* `shared/widgets.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
