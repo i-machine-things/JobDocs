@@ -14,10 +14,13 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
 from pathlib import Path
 import atexit
+import logging
 import os
 import shutil
 import struct
 import tempfile
+
+logger = logging.getLogger(__name__)
 
 
 # Single atexit handler for all DropZone temp directories — avoids accumulating
@@ -1437,38 +1440,49 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
 
             def do_render(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
                 painter = QPainter(pr)
-                page_rect = QRectF(painter.viewport())
-                first = True
-                for path in renderable:
-                    ext = Path(path).suffix.lower()
-                    if ext == '.pdf' and _fitz is not None:
-                        doc = _fitz.open(path)
-                        for page_num in range(doc.page_count):
+                try:
+                    page_rect = QRectF(painter.viewport())
+                    first = True
+                    for path in renderable:
+                        ext = Path(path).suffix.lower()
+                        if ext == '.pdf' and _fitz is not None:
+                            try:
+                                doc = _fitz.open(path)
+                                try:
+                                    for page_num in range(doc.page_count):
+                                        if not first:
+                                            pr.newPage()
+                                            page_rect = QRectF(painter.viewport())
+                                        first = False
+                                        pg = doc[page_num]
+                                        zoom = 200 / 72  # render at 200 DPI
+                                        pix = pg.get_pixmap(
+                                            matrix=_fitz.Matrix(zoom, zoom), alpha=False
+                                        )
+                                        samples = bytes(pix.samples)
+                                        img = QImage(
+                                            samples, pix.width, pix.height,
+                                            pix.stride, QImage.Format.Format_RGB888,
+                                        ).copy()
+                                        _draw_image_fitted(painter, img, page_rect)
+                                finally:
+                                    doc.close()
+                            except Exception:
+                                logger.warning(
+                                    "do_render: failed to render PDF %s", path,
+                                    exc_info=True,
+                                )
+                        else:
+                            img = QImage(path)
+                            if img.isNull():
+                                continue
                             if not first:
                                 pr.newPage()
                                 page_rect = QRectF(painter.viewport())
                             first = False
-                            pg = doc[page_num]
-                            zoom = 200 / 72  # render at 200 DPI
-                            pix = pg.get_pixmap(
-                                matrix=_fitz.Matrix(zoom, zoom), alpha=False
-                            )
-                            samples = bytes(pix.samples)
-                            img = QImage(
-                                samples, pix.width, pix.height,
-                                pix.stride, QImage.Format.Format_RGB888,
-                            ).copy()
                             _draw_image_fitted(painter, img, page_rect)
-                        doc.close()
-                    else:
-                        if not first:
-                            pr.newPage()
-                            page_rect = QRectF(painter.viewport())
-                        first = False
-                        img = QImage(path)
-                        if not img.isNull():
-                            _draw_image_fitted(painter, img, page_rect)
-                painter.end()
+                finally:
+                    painter.end()
 
             from PyQt6.QtPrintSupport import QPrintPreviewDialog
             preview = QPrintPreviewDialog(printer, parent)

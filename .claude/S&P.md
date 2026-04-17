@@ -5675,3 +5675,25 @@ Reviewing files that changed from the base of the PR and between 7221b1e56b43f6e
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-17 — `shared/widgets.py` (QPrintPreviewDialog render safety)
+
+**Review:** PR #25 — CodeRabbit flagged two actionable bugs in `do_render` and one nitpick.
+**Result:** Both actionable items fixed; nitpick logged for future optimisation.
+
+### Findings
+
+1. **Blank pages emitted for unreadable images**
+   - `pr.newPage()` and `first = False` were called before `img.isNull()` check, producing blank pages for files that fail to load.
+   - Fix: load `QImage` first, `continue` on `isNull()`, only then advance the page counter.
+
+2. **`painter.end()` and `doc.close()` not guaranteed on exception**
+   - If `_fitz.open()` or rendering raised inside `do_render`, `painter.end()` was skipped, crashing the print backend. `doc.close()` was also skipped, leaking the file handle.
+   - Fix: wrapped QPainter body in `try/finally` for `painter.end()`; wrapped `doc` usage in inner `try/finally` for `doc.close()`; per-file exceptions caught and logged via `logger.warning(..., exc_info=True)`.
+   - Added module-level `logger = logging.getLogger(__name__)` to `shared/widgets.py`.
+
+3. **Nitpick — PDF pages re-rasterised on every `paintRequested` emission** *(not yet fixed)*
+   - `QPrintPreviewDialog` re-emits `paintRequested` on zoom/layout/resize, causing repeated 200 DPI renders of all PDF pages on the GUI thread.
+   - Future fix: pre-render PDF pages to `QImage` cache before connecting the signal; `do_render` blits from cache. Keep full 200 DPI only for the actual print path.
