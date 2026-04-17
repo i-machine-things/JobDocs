@@ -1554,7 +1554,6 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     _pa.end()
 
             from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrintDialog
-            from PyQt6.QtPrintSupport import QPrintPreviewWidget
             from PyQt6.QtGui import QKeySequence, QAction
 
             preview = QPrintPreviewDialog(preview_printer, parent)
@@ -1562,8 +1561,6 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
 
             # Intercept the built-in Print toolbar button so we can render at
             # 200 DPI on a native HighResolution printer, not the PDF preview printer.
-            _pw = preview.findChild(QPrintPreviewWidget)
-
             def _do_print() -> None:
                 _print_printer = QPrinter(QPrinter.PrinterMode.HighResolution)
                 _pdlg = QPrintDialog(_print_printer, preview)
@@ -1572,6 +1569,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 _render_to(_print_printer, 200)
                 preview.accept()
 
+            _hooked = False
             for _act in preview.findChildren(QAction):
                 if _act.shortcut().matches(
                     QKeySequence(QKeySequence.StandardKey.Print)
@@ -1581,7 +1579,14 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     except TypeError:
                         pass
                     _act.triggered.connect(_do_print)
+                    _hooked = True
                     break
+            if not _hooked:
+                logger.warning(
+                    "print_files_with_dialog: could not locate Print toolbar "
+                    "action in QPrintPreviewDialog; toolbar Print will use the "
+                    "PDF preview printer instead of a real printer."
+                )
 
             if preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
                 cancelled = True
