@@ -5821,3 +5821,162 @@ Reviewing files that changed from the base of the PR and between abefd9317619ebc
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-17 — `PR #25: feat: print preview dialog` — review run 1
+
+
+
+<details>
+<summary>🧹 Nitpick comments (2)</summary><blockquote>
+
+<details>
+<summary>shared/widgets.py (2)</summary><blockquote>
+
+`1475-1483`: **Minor: consider symmetry with the PDF branch.**
+
+The image path has no local `try/except`, so an unexpected raise from `QImage(path)` or `_draw_image_fitted` would escape `do_render` and (per Qt) risk aborting the app, whereas the PDF branch logs and continues. In practice `QImage(path)` returns a null image rather than raising, so this is very low risk — flagging only for consistency. Feel free to defer.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/widgets.py` around lines 1475 - 1483, The image-handling branch in
+do_render lacks a local try/except so exceptions from QImage(path) or
+_draw_image_fitted could escape; wrap the block that constructs QImage(path),
+checks isNull(), calls pr.newPage()/QRectF(...) and _draw_image_fitted(painter,
+img, page_rect) in a try/except, mirror the PDF branch behavior by logging the
+exception and continuing (i.e., skip this image) so an error doesn't abort the
+render; reference QImage(path), _draw_image_fitted, do_render and the local
+first/pr.newPage() logic when making the changes.
+```
+
+</details>
+
+---
+
+`1427-1436`: **Optional: log when PDFs are demoted to the OS fallback.**
+
+When `fitz` is missing, every `.pdf` is silently moved from `renderable` to `fallback`, which changes user-visible behavior (no preview, OS print dialog instead). Since you now have a module logger, a single warning here would make this traceable in support logs without touching UX.
+
+<details>
+<summary>♻️ Suggested log statement</summary>
+
+```diff
+         try:
+             import fitz as _fitz  # pymupdf
+         except ImportError:
+             _fitz = None
+             # PDFs can't be previewed — move them to OS fallback
+             for _p in list(renderable):
+                 if Path(_p).suffix.lower() == '.pdf':
+                     fallback.append(_p)
+                     renderable.remove(_p)
++            if any(Path(p).suffix.lower() == '.pdf' for p in fallback):
++                logger.warning(
++                    "pymupdf (fitz) unavailable; PDFs will be sent to the OS "
++                    "print handler without preview."
++                )
+```
+</details>
+
+Also a nit: the `for _p in list(renderable): ... renderable.remove(_p)` pass is O(n²); a single comprehension split would be clearer and linear, e.g. `pdfs, renderable = [p for p in renderable if Path(p).suffix.lower() == '.pdf'], [p for p in renderable if Path(p).suffix.lower() != '.pdf']; fallback.extend(pdfs)`. Trivial given typical list sizes.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/widgets.py` around lines 1427 - 1436, When the pre-check import of
+fitz (import fitz as _fitz) fails the code currently moves PDFs from renderable
+to fallback silently and does it with an O(n²) remove loop; change this to (1)
+split renderable into pdfs and non-pdfs using a comprehension (e.g. pdfs = [p
+for p in renderable if Path(p).suffix.lower() == '.pdf']; renderable = [p for p
+in renderable if Path(p).suffix.lower() != '.pdf']; fallback.extend(pdfs)) to
+make it linear, and (2) emit a single warning via the module logger (e.g.
+logger.warning) when any pdfs are demoted so the change in behavior is
+traceable; keep the import-as-_fitz logic and only run the split/log when _fitz
+is None.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Nitpick comments:
+In `@shared/widgets.py`:
+- Around line 1475-1483: The image-handling branch in do_render lacks a local
+try/except so exceptions from QImage(path) or _draw_image_fitted could escape;
+wrap the block that constructs QImage(path), checks isNull(), calls
+pr.newPage()/QRectF(...) and _draw_image_fitted(painter, img, page_rect) in a
+try/except, mirror the PDF branch behavior by logging the exception and
+continuing (i.e., skip this image) so an error doesn't abort the render;
+reference QImage(path), _draw_image_fitted, do_render and the local
+first/pr.newPage() logic when making the changes.
+- Around line 1427-1436: When the pre-check import of fitz (import fitz as
+_fitz) fails the code currently moves PDFs from renderable to fallback silently
+and does it with an O(n²) remove loop; change this to (1) split renderable into
+pdfs and non-pdfs using a comprehension (e.g. pdfs = [p for p in renderable if
+Path(p).suffix.lower() == '.pdf']; renderable = [p for p in renderable if
+Path(p).suffix.lower() != '.pdf']; fallback.extend(pdfs)) to make it linear, and
+(2) emit a single warning via the module logger (e.g. logger.warning) when any
+pdfs are demoted so the change in behavior is traceable; keep the
+import-as-_fitz logic and only run the split/log when _fitz is None.
+```
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `9f5b900d-8a97-4f00-8961-886bd909ea02`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 83e8819203bb1ca0f1d12ea436781d1023fcdd16 and 14c50c80b93b19735dac7a18351d676106767816.
+
+</details>
+
+<details>
+<summary>⛔ Files ignored due to path filters (1)</summary>
+
+* `.claude/S&P.md` is excluded by `!.claude/S&P.md`
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (1)</summary>
+
+* `shared/widgets.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
