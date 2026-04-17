@@ -1438,11 +1438,10 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
         if renderable:
             printer = QPrinter(QPrinter.PrinterMode.HighResolution)
 
-            # Pre-cache at screen DPI (96) so preview blitting is fast — the
-            # overview/facing-pages toolbar buttons re-emit paintRequested on
-            # every click, and large 200 DPI images caused GUI freezes.
-            # Actual printing re-renders from fitz at 200 DPI after the user
-            # confirms the printer dialog.
+            # Pre-cache at 96 DPI so preview blits are instant.
+            # paintRequested fires on every zoom/view-mode change — large images
+            # caused 5+ second GUI freezes. The actual print job re-renders from
+            # fitz at 200 DPI (see _do_print below).
             _PREVIEW_DPI = 96
             preview_cache: list[QImage] = []
             for path in renderable:
@@ -1478,92 +1477,108 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     if not img.isNull():
                         preview_cache.append(img)
 
-            def do_render_preview(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
-                painter = QPainter(pr)
+            # Flag: True only while the actual print job is being rendered
+            _printing: list[bool] = [False]
+
+            def _render_to(pr: 'QPrinter', dpi: float) -> None:
+                """Render renderable files to pr at the given DPI."""
+                _pa = QPainter(pr)
                 try:
-                    page_rect = QRectF(painter.viewport())
-                    for i, img in enumerate(preview_cache):
-                        if i > 0:
-                            pr.newPage()
-                            page_rect = QRectF(painter.viewport())
-                        _draw_image_fitted(painter, img, page_rect)
-                finally:
-                    painter.end()
-
-            from PyQt6.QtPrintSupport import QPrintPreviewWidget, QPrintDialog
-            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
-
-            _dlg = QDialog(parent)
-            _dlg.setWindowTitle("Print Preview")
-            _dlg.resize(900, 700)
-            _dlg_layout = QVBoxLayout(_dlg)
-            _dlg_layout.setContentsMargins(0, 0, 0, 6)
-            _preview_widget = QPrintPreviewWidget(printer, _dlg)
-            _dlg_layout.addWidget(_preview_widget)
-            _btn_box = QDialogButtonBox(_dlg)
-            _btn_box.addButton("Print\u2026", QDialogButtonBox.ButtonRole.AcceptRole)
-            _btn_box.addButton(QDialogButtonBox.StandardButton.Cancel)
-            _btn_box.accepted.connect(_dlg.accept)
-            _btn_box.rejected.connect(_dlg.reject)
-            _dlg_layout.addWidget(_btn_box)
-            _preview_widget.paintRequested.connect(do_render_preview)
-
-            if _dlg.exec() != QDialog.DialogCode.Accepted:
-                cancelled = True
-            else:
-                # User confirmed — show printer dialog then render at full quality
-                _print_dlg = QPrintDialog(printer, parent)
-                if _print_dlg.exec() != QPrintDialog.DialogCode.Accepted:
-                    cancelled = True
-                else:
-                    _painter = QPainter(printer)
-                    try:
-                        _page_rect = QRectF(_painter.viewport())
-                        _first = True
-                        for path in renderable:
-                            ext = Path(path).suffix.lower()
-                            if ext == '.pdf' and _fitz is not None:
+                    _pr = QRectF(_pa.viewport())
+                    _first = True
+                    for path in renderable:
+                        ext = Path(path).suffix.lower()
+                        if ext == '.pdf' and _fitz is not None:
+                            try:
+                                doc = _fitz.open(path)
                                 try:
-                                    doc = _fitz.open(path)
-                                    try:
-                                        for page_num in range(doc.page_count):
-                                            if not _first:
-                                                printer.newPage()
-                                                _page_rect = QRectF(_painter.viewport())
-                                            _first = False
-                                            pg = doc[page_num]
-                                            pix = pg.get_pixmap(
-                                                matrix=_fitz.Matrix(
-                                                    200 / 72, 200 / 72
-                                                ),
-                                                alpha=False,
-                                            )
-                                            samples = bytes(pix.samples)
-                                            img = QImage(
-                                                samples, pix.width, pix.height,
-                                                pix.stride,
-                                                QImage.Format.Format_RGB888,
-                                            ).copy()
-                                            _draw_image_fitted(_painter, img, _page_rect)
-                                    finally:
-                                        doc.close()
-                                except Exception:
-                                    logger.warning(
-                                        "print_files_with_dialog: failed to render"
-                                        " PDF %s for printing",
-                                        path, exc_info=True,
-                                    )
-                            else:
-                                img = QImage(path)
-                                if img.isNull():
-                                    continue
-                                if not _first:
-                                    printer.newPage()
-                                    _page_rect = QRectF(_painter.viewport())
-                                _first = False
-                                _draw_image_fitted(_painter, img, _page_rect)
+                                    for page_num in range(doc.page_count):
+                                        if not _first:
+                                            pr.newPage()
+                                            _pr = QRectF(_pa.viewport())
+                                        _first = False
+                                        pg = doc[page_num]
+                                        pix = pg.get_pixmap(
+                                            matrix=_fitz.Matrix(dpi / 72, dpi / 72),
+                                            alpha=False,
+                                        )
+                                        samples = bytes(pix.samples)
+                                        img = QImage(
+                                            samples, pix.width, pix.height,
+                                            pix.stride, QImage.Format.Format_RGB888,
+                                        ).copy()
+                                        _draw_image_fitted(_pa, img, _pr)
+                                finally:
+                                    doc.close()
+                            except Exception:
+                                logger.warning(
+                                    "print_files_with_dialog: failed to render"
+                                    " PDF %s at %.0f DPI",
+                                    path, dpi, exc_info=True,
+                                )
+                        else:
+                            img = QImage(path)
+                            if img.isNull():
+                                continue
+                            if not _first:
+                                pr.newPage()
+                                _pr = QRectF(_pa.viewport())
+                            _first = False
+                            _draw_image_fitted(_pa, img, _pr)
+                finally:
+                    _pa.end()
+
+            def do_render(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
+                if _printing[0]:
+                    _render_to(pr, 200)
+                else:
+                    # Fast preview blit from 96 DPI cache
+                    _pa = QPainter(pr)
+                    try:
+                        _pr = QRectF(_pa.viewport())
+                        for i, img in enumerate(preview_cache):
+                            if i > 0:
+                                pr.newPage()
+                                _pr = QRectF(_pa.viewport())
+                            _draw_image_fitted(_pa, img, _pr)
                     finally:
-                        _painter.end()
+                        _pa.end()
+
+            from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrintDialog
+            from PyQt6.QtPrintSupport import QPrintPreviewWidget
+            from PyQt6.QtGui import QKeySequence, QAction
+
+            preview = QPrintPreviewDialog(printer, parent)
+            preview.paintRequested.connect(do_render)
+
+            # Intercept the built-in Print toolbar button so we can switch to
+            # 200 DPI rendering for the actual job without touching the preview.
+            _pw = preview.findChild(QPrintPreviewWidget)
+
+            def _do_print() -> None:
+                _pdlg = QPrintDialog(printer, preview)
+                if _pdlg.exec() != QPrintDialog.DialogCode.Accepted:
+                    return
+                _printing[0] = True
+                try:
+                    getattr(_pw, 'print')()  # QPrintPreviewWidget::print()
+                finally:
+                    _printing[0] = False
+                preview.accept()
+
+            for _act in preview.findChildren(QAction):
+                if _act.shortcut().matches(
+                    QKeySequence(QKeySequence.StandardKey.Print)
+                ) == QKeySequence.SequenceMatch.ExactMatch:
+                    try:
+                        _act.triggered.disconnect()
+                    except TypeError:
+                        pass
+                    _act.triggered.connect(_do_print)
+                    break
+
+            if preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
+                cancelled = True
 
     if cancelled:
         return
