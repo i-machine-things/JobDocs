@@ -1842,3 +1842,117 @@ Consider adding defensive tracking — either log a warning if the hook is not i
 5. **`_hooked` warning-only fallback** *(duplicate — acknowledged, not changed)*
    - CodeRabbit repeated the suggestion to escalate `logger.warning` to `logger.error` + `QMessageBox` + `cancelled = True`.
    - Decision: keeping warning-only fallback. The `_hooked = False` path is a theoretical edge case (Qt6 reliably exposes the Print QAction); aborting the print dialog for it would degrade UX more than the fallback behavior.
+
+---
+
+## 2026-04-17 — `PR #25: feat: print preview dialog` — review run 4
+
+**Actionable comments posted: 2**
+
+**♻️ Duplicate comments (3)**
+
+**shared/widgets.py (2)**
+
+`1527-1532`: _⚠️ Potential issue_ | _🟠 Major_
+
+**Surface high-DPI print render failures, not just preview failures.**
+
+A PDF can preview successfully at 48 DPI but fail when `_render_to()` re-renders it at 200 DPI. Line 1527 only logs that failure, then the preview accepts, so the user can receive incomplete output without a warning.
+
+**🛡️ Proposed fix**
+
+```diff
+     cancelled = False
+     failed_pre_render: list[str] = []
++    failed_print_render: list[str] = []
+@@
+                             except Exception:
+                                 logger.warning(
+                                     "print_files_with_dialog: failed to render"
+                                     " PDF %s at %.0f DPI",
+                                     path, dpi, exc_info=True,
+                                 )
++                                failed_print_render.append(os.path.basename(path))
+@@
+     if failed_pre_render:
+         from PyQt6.QtWidgets import QMessageBox
+         names = '\n'.join(f'  • {n}' for n in failed_pre_render)
+         QMessageBox.warning(
+             parent, "Print",
+             f"The following PDF(s) could not be loaded for preview and were skipped:\n\n{names}"
+         )
++
++    if failed_print_render:
++        from PyQt6.QtWidgets import QMessageBox
++        names = '\n'.join(f'  • {n}' for n in sorted(set(failed_print_render)))
++        QMessageBox.warning(
++            parent, "Print",
++            f"The following PDF(s) could not be rendered for printing:\n\n{names}"
++        )
+```
+
+ 
+
+Also applies to: 1622-1628
+
+---
+
+`1586-1593`: _⚠️ Potential issue_ | _🟠 Major_
+
+**Fail visibly when the preview Print action cannot be intercepted.**
+
+Line 1586 only logs when the toolbar action hook fails. The user can still click the built-in Print button, but that path uses the preview dialog’s PDF preview printer instead of this high-resolution native print path, so the print action can silently degrade or not produce the intended printer output.
+
+**🛡️ Proposed fix**
+
+```diff
+             if not _hooked:
+                 logger.warning(
+                     "print_files_with_dialog: could not locate Print toolbar "
+                     "action in QPrintPreviewDialog; toolbar Print will use the "
+                     "PDF preview printer instead of a real printer."
+                 )
+-
+-            if preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
+-                cancelled = True
++                from PyQt6.QtWidgets import QMessageBox
++                QMessageBox.warning(
++                    parent,
++                    "Print",
++                    "Print preview could not initialize the printer action. "
++                    "Please try printing these files with the system handler."
++                )
++                cancelled = True
++            elif preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
++                cancelled = True
+```
+
+**build_scripts/clean_sp.py (1)**
+
+`28-30`: _⚠️ Potential issue_ | _🟡 Minor_
+
+**Narrow the H1 reset so noise details cannot break out.**
+
+`_TOP_HEADING` still treats any `# ...` line as a reset. Because Line 45 runs before the `skip > 0` discard branch, an H1 inside a discarded details block can clear `skip` and leak the rest of that block. Keep recovery resets for dated entry headings, and only accept the file H1 before any block state exists.  
+
+**🐛 Proposed fix**
+
+```diff
+-# Matches "# Title" (file header) or "## YYYY-MM-DD — ..." (entry headers).
+-_TOP_HEADING = re.compile(r'^# (?!#)|^## \d{4}-\d{2}-\d{2}')
++# Matches "## YYYY-MM-DD — ..." entry headers.
++_ENTRY_HEADING = re.compile(r'^## \d{4}-\d{2}-\d{2}')
++_FILE_HEADING = re.compile(r'^# (?!#)')
+@@
+-        if _TOP_HEADING.match(s):
++        if _ENTRY_HEADING.match(s) or (
++            _FILE_HEADING.match(s) and not out and skip == 0 and depth == 0
++        ):
+             skip = 0
+             depth = 0
+             out.append(line)
+```
+
+Also applies to: 44-50
+
+---
