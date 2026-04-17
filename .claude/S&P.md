@@ -5980,3 +5980,143 @@ Reviewing files that changed from the base of the PR and between 83e8819203bb1ca
 </details>
 
 <!-- This is an auto-generated comment by CodeRabbit for review status -->
+
+---
+
+## 2026-04-17 — `PR #25: feat: print preview dialog` — review run 2
+
+**Actionable comments posted: 1**
+
+<details>
+<summary>🧹 Nitpick comments (1)</summary><blockquote>
+
+<details>
+<summary>shared/widgets.py (1)</summary><blockquote>
+
+`1446-1478`: **Preview cache pre-renders every page of every PDF at 96 DPI into RAM.**
+
+For a multi-PDF selection (or a single long PDF), `preview_cache` can grow large — e.g. a 100-page US-Letter PDF at 96 DPI RGB888 is ~250 MB, and the list holds the full set for the lifetime of the dialog. Images are also fully loaded via `QImage(path)` regardless of size. Consider:
+
+- Capping the number of pre-rendered pages (e.g., first N) and re-rendering on demand for the rest.
+- Using a smaller preview DPI (72) or downsampling images above a threshold.
+- Rendering lazily inside `do_render` for pages outside a small cached window, keyed by page index.
+
+Not a correctness blocker, but worth addressing before this ships to users who print large multi-page jobs.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/widgets.py` around lines 1446 - 1478, The preview code currently fully
+pre-renders every page of every PDF in renderable into preview_cache using _fitz
+and QImage, which can exhaust RAM for large/long PDFs; change this to cap
+pre-rendered pages (e.g., only first N pages per document or a global max),
+reduce preview DPI (use 72 or downsample large images), and switch to lazy
+rendering for pages outside the cached window by storing lightweight metadata
+(path + page index) in preview_cache and invoking do_render to render on demand;
+update the PDF branch that uses _fitz.open(...)/doc.page_count and the non-PDF
+branch that constructs QImage(path) to populate a limited cache and to call a
+re-render function when a missing page is requested.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Inline comments:
+In `@shared/widgets.py`:
+- Around line 1554-1582: The code currently assumes
+preview.findChild(QPrintPreviewWidget) returned a widget and that walking
+preview.findChildren(QAction) always finds and rewires the Print QAction; if
+either fails you silently fall back to printing the 96 DPI preview. Fix by (1)
+validating _pw after _pw = preview.findChild(QPrintPreviewWidget) and failing
+loudly (log error and set cancelled = True or show a user-facing message)
+instead of proceeding when _pw is None; (2) detect whether the for loop actually
+connected _do_print (track a boolean like _hooked = False), and if no QAction
+was hooked, fail loud (log/show message and set cancelled = True) rather than
+letting the built-in Print path run; and (3) harden _do_print so it checks _pw
+before calling getattr(_pw, 'print')() and always calls preview.accept() in a
+finally block when printing succeeds or fails; reference symbols: _pw,
+_do_print, _printing, preview.findChild(QPrintPreviewWidget),
+preview.findChildren(QAction), and QPrintDialog.
+
+---
+
+Nitpick comments:
+In `@shared/widgets.py`:
+- Around line 1446-1478: The preview code currently fully pre-renders every page
+of every PDF in renderable into preview_cache using _fitz and QImage, which can
+exhaust RAM for large/long PDFs; change this to cap pre-rendered pages (e.g.,
+only first N pages per document or a global max), reduce preview DPI (use 72 or
+downsample large images), and switch to lazy rendering for pages outside the
+cached window by storing lightweight metadata (path + page index) in
+preview_cache and invoking do_render to render on demand; update the PDF branch
+that uses _fitz.open(...)/doc.page_count and the non-PDF branch that constructs
+QImage(path) to populate a limited cache and to call a re-render function when a
+missing page is requested.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix (Beta)</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {"checkboxId": "4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9"} --> Push a commit to this branch (recommended)
+- [ ] <!-- {"checkboxId": "ff5b1114-7d8c-49e6-8ac1-43f82af23a33"} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `f710711d-2a11-43fe-8316-b60d8d0c4294`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 14c50c80b93b19735dac7a18351d676106767816 and ebafdb7aa25511d2c2148b49c799eaf8f7226761.
+
+</details>
+
+<details>
+<summary>⛔ Files ignored due to path filters (1)</summary>
+
+* `.claude/S&P.md` is excluded by `!.claude/S&P.md`
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (1)</summary>
+
+* `shared/widgets.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
