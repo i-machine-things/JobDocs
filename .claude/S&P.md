@@ -1813,3 +1813,32 @@ Consider adding defensive tracking — either log a warning if the hook is not i
 3. **Nitpick: factor three nearly-identical render loops into a helper** *(deferred)*
    - CodeRabbit: `preview_cache` pre-render loop, `do_render` blit loop, and `_render_to` render loop share similar structure; could be extracted to reduce duplication.
    - Decision: deferred — extracting is over-engineering for three call sites with subtly different concerns (pre-cache vs blit vs high-DPI). Log here for future reference.
+
+---
+
+## 2026-04-17 — `shared/widgets.py`, `build_scripts/clean_sp.py`, workflow (PR #25 run 4)
+
+**Review:** CodeRabbit PR #25 run 4 — 4 actionable findings (1 duplicate, 3 new)
+**Result:** 3 new findings fixed; duplicate `_hooked` escalation acknowledged but not changed.
+
+### Findings
+
+1. **`clean_sp.py`: heading-reset guard too broad** *(fixed)*
+   - Any `##` heading inside a `<details>` block reset `skip`, allowing noise content to leak.
+   - Fix: narrowed match to `## YYYY-MM-DD` pattern so only genuine S&P entry headers reset the counters.
+
+2. **`clean_sp.py`: inline `</details>` drops entire line** *(fixed)*
+   - A line like `"some text</details>"` had all content dropped, not just the tag.
+   - Fix: split on `</details>`, update skip/depth per closer, emit non-noise text segments.
+
+3. **Workflow YAML heredoc causes actionlint parse errors** *(fixed)*
+   - Inline Python heredoc in `run: |` was not valid YAML for actionlint.
+   - Fix: added `--stdin` mode to `build_scripts/clean_sp.py`; workflow now pipes `REVIEW_BODY` to it directly.
+
+4. **`shared/widgets.py`: swallowed PDF pre-render exceptions** *(fixed)*
+   - `except Exception:` logged the failure but didn't notify the user, so silently skipped PDFs appeared as missing pages.
+   - Fix: collect failed filenames in `failed_pre_render`; show `QMessageBox.warning` after dialog closes.
+
+5. **`_hooked` warning-only fallback** *(duplicate — acknowledged, not changed)*
+   - CodeRabbit repeated the suggestion to escalate `logger.warning` to `logger.error` + `QMessageBox` + `cancelled = True`.
+   - Decision: keeping warning-only fallback. The `_hooked = False` path is a theoretical edge case (Qt6 reliably exposes the Print QAction); aborting the print dialog for it would degrade UX more than the fallback behavior.
