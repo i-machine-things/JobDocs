@@ -5697,3 +5697,127 @@ Reviewing files that changed from the base of the PR and between 7221b1e56b43f6e
 3. **Nitpick — PDF pages re-rasterised on every `paintRequested` emission** *(not yet fixed)*
    - `QPrintPreviewDialog` re-emits `paintRequested` on zoom/layout/resize, causing repeated 200 DPI renders of all PDF pages on the GUI thread.
    - Future fix: pre-render PDF pages to `QImage` cache before connecting the signal; `do_render` blits from cache. Keep full 200 DPI only for the actual print path.
+
+**Actionable comments posted: 2**
+
+<details>
+<summary>🧹 Nitpick comments (1)</summary><blockquote>
+
+<details>
+<summary>shared/widgets.py (1)</summary><blockquote>
+
+`1473-1477`: **Optimize PDF rendering in preview to avoid repeated rasterization on user interaction.**
+
+`QPrintPreviewDialog` re-emits `paintRequested` whenever the user changes zoom, page layout, orientation, or resizes the dialog. Currently, `do_render` re-opens and rasterizes every PDF page at 200 DPI (line 1452) for each emission, freezing the UI for multi-page documents on the GUI thread.
+
+Cache rendered PDF pages to `QImage` objects before connecting the signal, so `do_render` only blits cached images—or render at a lower preview DPI and perform a full 200 DPI re-render only after the user accepts and prints.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@shared/widgets.py` around lines 1473 - 1477, The preview currently re-renders
+all PDF pages inside do_render each time QPrintPreviewDialog.paintRequested
+fires, causing UI stalls; modify the flow to pre-render and cache pages as
+QImage (or render at a lower preview DPI) before connecting
+preview.paintRequested so do_render only blits cached QImage objects to the
+preview; keep the full 200 DPI rasterization for the actual print path (when
+preview.exec() returns Accepted) and ensure references to preview,
+QPrintPreviewDialog, do_render, and printer are updated to use the cache and a
+fast-path vs full-render decision.
+```
+
+</details>
+
+</blockquote></details>
+
+</blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+Inline comments:
+In `@shared/widgets.py`:
+- Around line 1464-1470: The code advances to a new printer page and flips the
+`first` flag before verifying the image load, causing blank pages for unreadable
+images; change the logic in the image-print loop so you construct `img =
+QImage(path)` and immediately check `if img.isNull(): continue` (or otherwise
+skip) before calling `pr.newPage()`, updating `first = False`, or computing
+`page_rect`, then call `_draw_image_fitted(painter, img, page_rect)` only for
+valid images.
+- Around line 1438-1471: do_render currently can raise inside the loop (e.g.
+_fitz.open or rendering) and skip painter.end() and doc.close(), crashing the
+app; wrap the QPainter usage in a try/finally to always call painter.end(), and
+for each path handle failures locally: when using _fitz.open(path) create/close
+the doc inside a try/finally so doc.close() always runs, and catch exceptions
+around per-file rendering to log/skip the bad file and continue the loop; also
+move the QImage.isNull() check before advancing pages/setting first = False so
+failed loads don't emit blank pages and ensure calls to _draw_image_fitted only
+happen for valid images.
+
+---
+
+Nitpick comments:
+In `@shared/widgets.py`:
+- Around line 1473-1477: The preview currently re-renders all PDF pages inside
+do_render each time QPrintPreviewDialog.paintRequested fires, causing UI stalls;
+modify the flow to pre-render and cache pages as QImage (or render at a lower
+preview DPI) before connecting preview.paintRequested so do_render only blits
+cached QImage objects to the preview; keep the full 200 DPI rasterization for
+the actual print path (when preview.exec() returns Accepted) and ensure
+references to preview, QPrintPreviewDialog, do_render, and printer are updated
+to use the cache and a fast-path vs full-render decision.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix (Beta)</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {"checkboxId": "4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9"} --> Push a commit to this branch (recommended)
+- [ ] <!-- {"checkboxId": "ff5b1114-7d8c-49e6-8ac1-43f82af23a33"} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Path: .coderabbit.yaml
+
+**Review profile**: CHILL
+
+**Plan**: Pro
+
+**Run ID**: `1cd0aae7-4113-4310-9f13-540ff6c44b60`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between abefd9317619ebceb1c2e3f78793b527a1ba073c and 83e8819203bb1ca0f1d12ea436781d1023fcdd16.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (1)</summary>
+
+* `shared/widgets.py`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->
