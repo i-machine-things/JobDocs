@@ -1432,6 +1432,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
     fallback   = [p for p in paths if os.path.isfile(p) and Path(p).suffix.lower() not in _RENDERABLE]
 
     cancelled = False
+    failed_pre_render: list[str] = []
     if renderable:
         # Pre-check fitz so the paintRequested closure doesn't import on every call
         try:
@@ -1487,6 +1488,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                             "print_files_with_dialog: failed to pre-render PDF %s",
                             path, exc_info=True,
                         )
+                        failed_pre_render.append(os.path.basename(path))
                 else:
                     img = QImage(path)
                     if not img.isNull():
@@ -1615,6 +1617,14 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
         QMessageBox.warning(
             parent, "Print",
             f"The following file(s) could not be printed (no print handler registered):\n\n{names}"
+        )
+
+    if failed_pre_render:
+        from PyQt6.QtWidgets import QMessageBox
+        names = '\n'.join(f'  • {n}' for n in failed_pre_render)
+        QMessageBox.warning(
+            parent, "Print",
+            f"The following PDF(s) could not be loaded for preview and were skipped:\n\n{names}"
         )
 
 

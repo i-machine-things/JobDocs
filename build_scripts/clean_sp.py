@@ -1,14 +1,19 @@
 """
-One-shot cleanup script: strip raw CodeRabbit HTML noise from .claude/S&P.md.
-Run from the repo root: python build_scripts/clean_sp.py
+Strip raw CodeRabbit HTML noise from .claude/S&P.md.
+
+Two modes:
+  python build_scripts/clean_sp.py          — clean .claude/S&P.md in place
+  python build_scripts/clean_sp.py --stdin  — read review body from stdin, write cleaned to stdout
 
 The script handles:
   - </blockquote></details> on a single line (multiple closers per line)
-  - depth/skip counter reset at every ## section header (top-level, never nested)
+  - Inline text before </details> is preserved (not dropped with the tag)
+  - Counters reset only at genuine S&P top-level entry headings (## YYYY-MM-DD ...)
   - Noise blocks fully removed: 🤖 Prompt, 🪄 Autofix, ℹ️ Review info, etc.
   - Kept blocks flattened: <details> tags stripped, content preserved
 """
 import re
+import sys
 from pathlib import Path
 
 SP = Path('.claude/S&P.md')
@@ -19,6 +24,10 @@ NOISE_RE = re.compile(
     r'|📥\s*Commits|⛔\s*Files ignored|📒\s*Files selected)',
     re.IGNORECASE,
 )
+
+# Only genuine S&P top-level entry headings reset the depth/skip counters.
+# Matches "# Title" (file header) or "## YYYY-MM-DD — ..." (entry headers).
+_TOP_HEADING = re.compile(r'^# (?!#)|^## \d{4}-\d{2}-\d{2}')
 
 
 def strip_noise(text: str) -> str:
@@ -32,23 +41,33 @@ def strip_noise(text: str) -> str:
         line = lines[i]
         s = line.strip()
 
-        # ── Top-level section header → always at depth 0, reset counters ─────
-        if re.match(r'^#{1,3} ', s):
+        # ── S&P top-level heading → always at depth 0, reset counters ────────
+        if _TOP_HEADING.match(s):
             skip = 0
             depth = 0
             out.append(line)
             i += 1
             continue
 
-        # ── Count any </details> closers on this line ─────────────────────────
-        close_count = len(re.findall(r'</details>', s, re.IGNORECASE))
-        if close_count:
-            for _ in range(close_count):
-                if skip > 0:
-                    skip -= 1
-                elif depth > 0:
-                    depth -= 1
-            # Don't emit closing tags; continue to next line
+        # ── Lines containing </details> closers ───────────────────────────────
+        # Process each </details> in order; emit text segments that are outside
+        # noise blocks (do not drop the entire line when closers are inline).
+        if re.search(r'</details>', s, re.IGNORECASE):
+            parts = re.split(r'(?i)</details>', line)
+            kept = []
+            for k, part in enumerate(parts):
+                # Strip structural closing tags from this text segment
+                seg = re.sub(r'(?i)</?blockquote>', '', part).strip()
+                if seg and skip == 0 and not re.match(r'\s*<!--.*?-->\s*$', seg):
+                    kept.append(seg)
+                # Each split point represents one </details> closer
+                if k < len(parts) - 1:
+                    if skip > 0:
+                        skip -= 1
+                    elif depth > 0:
+                        depth -= 1
+            if kept:
+                out.append(' '.join(kept))
             i += 1
             continue
 
@@ -108,7 +127,14 @@ def strip_noise(text: str) -> str:
     return result.rstrip() + '\n'
 
 
-def main():
+def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == '--stdin':
+        # Review-body mode: read from stdin, write cleaned text to stdout.
+        body = sys.stdin.read()
+        sys.stdout.write(strip_noise(body).rstrip() + '\n')
+        return
+
+    # S&P.md in-place cleaning mode.
     original = SP.read_text(encoding='utf-8')
     cleaned = strip_noise(original)
 

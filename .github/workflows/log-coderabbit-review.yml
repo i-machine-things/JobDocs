@@ -19,90 +19,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Write review cleaner
-        run: |
-          cat > /tmp/clean_review.py << 'PYEOF'
-import re, os, sys
-
-body = os.environ.get('REVIEW_BODY', '')
-
-# Summaries whose entire <details> block (including nested content) should be dropped.
-NOISE_RE = re.compile(
-    r'(🤖|🪄\s*Autofix|ℹ️\s*Review info|⚙️\s*Run configuration'
-    r'|📥\s*Commits|⛔\s*Files ignored|📒\s*Files selected)',
-    re.IGNORECASE,
-)
-
-def clean(text):
-    lines = text.split('\n')
-    out = []
-    skip = 0
-    depth = 0
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        s = line.strip()
-
-        # Count </details> closers on this line (handles </blockquote></details>)
-        close_count = len(re.findall(r'</details>', s, re.IGNORECASE))
-        if close_count:
-            for _ in range(close_count):
-                if skip > 0:
-                    skip -= 1
-                elif depth > 0:
-                    depth -= 1
-            i += 1
-            continue
-
-        # Opening <details>
-        if re.search(r'<details>', s, re.IGNORECASE):
-            if skip > 0:
-                skip += 1
-                i += 1
-                continue
-            # Collect summary (may span to next line)
-            combined = s
-            j = i
-            if '</summary>' not in combined.lower():
-                j += 1
-                while j < len(lines):
-                    combined += '\n' + lines[j]
-                    if '</summary>' in lines[j].lower():
-                        break
-                    j += 1
-            sm = re.search(r'<summary>(.*?)</summary>', combined, re.IGNORECASE | re.DOTALL)
-            if sm and NOISE_RE.search(sm.group(1)):
-                skip = 1
-                i = j + 1
-                continue
-            # Kept block: flatten
-            depth += 1
-            i = j + 1
-            if sm:
-                txt = re.sub(r'<[^>]+>', '', sm.group(1)).strip()
-                if txt:
-                    out.append(f'**{txt}**')
-            continue
-
-        if skip > 0:
-            i += 1
-            continue
-
-        line = re.sub(r'</?blockquote>', '', line, flags=re.IGNORECASE)
-        line = re.sub(r'</?summary[^>]*>', '', line, flags=re.IGNORECASE)
-        if re.match(r'\s*<!--.*?-->\s*$', line):
-            i += 1
-            continue
-        out.append(line)
-        i += 1
-
-    result = re.sub(r'\n{3,}', '\n\n', '\n'.join(out))
-    return result.strip()
-
-print(clean(body))
-PYEOF
-
       - name: Append CodeRabbit review to .claude/S&P.md
         env:
           REVIEW_BODY: ${{ github.event.review.body }}
@@ -119,7 +35,7 @@ PYEOF
           RUN_NUM=$(( ${MAX_RUN:-0} + 1 ))
           HEADING="## ${DATE} — \`${PR_REF}\` — review run ${RUN_NUM}"
 
-          CLEAN_BODY=$(python3 /tmp/clean_review.py)
+          CLEAN_BODY=$(echo "$REVIEW_BODY" | python3 build_scripts/clean_sp.py --stdin)
 
           printf '\n---\n\n%s\n\n%s\n' "${HEADING}" "${CLEAN_BODY}" >> ".claude/S&P.md"
 
