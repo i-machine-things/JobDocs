@@ -1445,15 +1445,14 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     renderable.remove(_p)
 
         if renderable:
-            # Two separate QPrinter objects:
-            #   preview_printer — screen DPI (96), used by QPrintPreviewDialog.
-            #     The painter viewport is 96 DPI units so QPicture data is small
-            #     and overview/zoom toolbar interactions stay responsive.
-            #   print_printer  — HighResolution, configured by QPrintDialog and
-            #     used for the actual print job.
+            # preview_printer: PDF-format virtual printer — no system printer
+            # connection, no I/O, no timeouts.  QPrintPreviewDialog uses it only
+            # to record QPicture data; the output file is never written.
+            # print_printer: HighResolution native printer, only created and
+            # configured by QPrintDialog when the user actually clicks Print.
             preview_printer = QPrinter()
+            preview_printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
             preview_printer.setResolution(96)
-            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
 
             # Pre-cache at 48 DPI. Each A4 page is ~397×561 px — small enough
             # that QPicture serialisation and overview-mode replay are instant.
@@ -1561,20 +1560,16 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
             preview = QPrintPreviewDialog(preview_printer, parent)
             preview.paintRequested.connect(do_render)
 
-            # Intercept the built-in Print toolbar button so we can render the
-            # actual job at 200 DPI on the HighResolution printer, not the 96 DPI
-            # preview_printer.
+            # Intercept the built-in Print toolbar button so we can render at
+            # 200 DPI on a native HighResolution printer, not the PDF preview printer.
             _pw = preview.findChild(QPrintPreviewWidget)
 
             def _do_print() -> None:
-                _pdlg = QPrintDialog(printer, preview)
+                _print_printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+                _pdlg = QPrintDialog(_print_printer, preview)
                 if _pdlg.exec() != QPrintDialog.DialogCode.Accepted:
                     return
-                _printing[0] = True
-                try:
-                    _render_to(printer, 200)
-                finally:
-                    _printing[0] = False
+                _render_to(_print_printer, 200)
                 preview.accept()
 
             for _act in preview.findChildren(QAction):
