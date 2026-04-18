@@ -225,12 +225,7 @@ jobs:
           for item in main.py core modules shared sample_files requirements.txt; do
             [ -e "$item" ] && cp -r "$item" linux/flatpak/src/
           done
-          pip download \
-            --only-binary :all: \
-            --python-version 3.12 \
-            --platform manylinux_2_28_x86_64 \
-            -d linux/flatpak/src/wheels/ \
-            -r requirements.txt
+          pip download --only-binary :all: -d linux/flatpak/src/wheels/ -r requirements.txt
           cp JobDocs.iconset/icon_256x256.png linux/flatpak/icon_256x256.png
 
       - name: Inject version into metainfo
