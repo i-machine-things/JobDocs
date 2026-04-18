@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001, RUF002
 """
 Strip raw CodeRabbit HTML noise from .claude/S&P.md.
 
