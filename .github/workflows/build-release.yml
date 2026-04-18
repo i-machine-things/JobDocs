@@ -18,7 +18,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  verify-stable-ancestry:
+  verify-master-ancestry:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,14 +26,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify tag is descended from stable
+      - name: Verify tag is descended from master
         run: |
-          git fetch origin stable
-          if ! git merge-base --is-ancestor origin/stable "$GITHUB_SHA"; then
-            echo "ERROR: Tag $GITHUB_REF_NAME is not descended from stable. Only tag from stable."
+          git fetch origin master
+          if ! git merge-base --is-ancestor origin/master "$GITHUB_SHA"; then
+            echo "ERROR: Tag $GITHUB_REF_NAME is not descended from master. Only tag from master."
             exit 1
           fi
-          echo "OK: $GITHUB_REF_NAME is descended from stable"
+          echo "OK: $GITHUB_REF_NAME is descended from master"
 
   # ---------------------------------------------------------------------------
   # Windows — Embedded Python + source files packaged by Inno Setup
@@ -45,7 +45,7 @@ jobs:
   #   {app}\plugins\           empty; user populates via Install Plugin
   # ---------------------------------------------------------------------------
   build-windows:
-    needs: verify-stable-ancestry
+    needs: verify-master-ancestry
     runs-on: windows-latest
     permissions:
       contents: read
@@ -183,7 +183,7 @@ jobs:
   # Linux — Python source packaged as a Flatpak bundle
   # ---------------------------------------------------------------------------
   build-flatpak:
-    needs: verify-stable-ancestry
+    needs: verify-master-ancestry
     runs-on: ubuntu-latest
     permissions:
       contents: read
