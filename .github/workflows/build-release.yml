@@ -197,19 +197,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Python dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install "pyinstaller>=6.0.0"
-
-      - name: Build PyInstaller binary
-        run: python -m PyInstaller build_scripts/JobDocs.spec --clean --noconfirm
-
-      - name: Verify binary
-        run: |
-          test -f dist/JobDocs/JobDocs || { echo "dist/JobDocs/JobDocs not found — build failed"; exit 1; }
-          echo "Build OK: $(du -h dist/JobDocs/JobDocs | cut -f1)"
-
       - name: Install Flatpak tools
         run: |
           sudo apt-get update -qq
@@ -232,9 +219,13 @@ jobs:
             org.freedesktop.Platform//24.08 \
             org.freedesktop.Sdk//24.08
 
-      - name: Stage files for Flatpak manifest
+      - name: Stage source files and download wheels
         run: |
-          cp -r dist/JobDocs linux/flatpak/JobDocs_dir
+          mkdir -p linux/flatpak/src
+          for item in main.py core modules shared sample_files requirements.txt; do
+            [ -e "$item" ] && cp -r "$item" linux/flatpak/src/
+          done
+          pip download --only-binary :all: -d linux/flatpak/src/wheels/ -r requirements.txt
           cp JobDocs.iconset/icon_256x256.png linux/flatpak/icon_256x256.png
 
       - name: Inject version into metainfo
