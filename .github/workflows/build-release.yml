@@ -246,10 +246,10 @@ jobs:
             linux/flatpak/io.github.i_machine_things.JobDocs.yml
           flatpak build-bundle \
             --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
-            --default-branch=stable \
             flatpak-repo \
             JobDocs-linux.flatpak \
-            io.github.i_machine_things.JobDocs
+            io.github.i_machine_things.JobDocs \
+            stable
 
       - name: Verify Flatpak bundle
         run: |
