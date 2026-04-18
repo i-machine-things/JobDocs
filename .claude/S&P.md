@@ -1972,3 +1972,20 @@ failed_print_render as before.
 ```
 
 ---
+
+---
+
+## 2026-04-17 — `shared/widgets.py`, `build_scripts/clean_sp.py` (PR #25 run 6)
+
+**Review:** CodeRabbit PR #25 run 6 — 2 actionable findings
+**Result:** Both fixed.
+
+### Findings
+
+1. **`clean_sp.py`: inline `<details>` opener after `</details>` closer silently dropped** *(fixed)*
+   - A line with both a closer and an opener (e.g. `</details><details>`) was handled by the closer branch which did `continue`, never reaching the opener branch.
+   - Fix: after processing closers, fall through to the opener branch if the tail segment contains a `<details>` opener.
+
+2. **`shared/widgets.py`: renderable files silently dropped when `_hooked=False`** *(fixed)*
+   - When the Print toolbar action could not be hooked, `cancelled = True` was set but `renderable` files were not moved to `fallback`, so they were silently lost rather than sent to the OS print handler.
+   - Fix: `fallback.extend(renderable)` before setting `cancelled = True`.
