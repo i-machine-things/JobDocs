@@ -157,8 +157,8 @@ def main() -> None:
 
     details_before = original.count('<details>')
     details_after  = cleaned.count('<details>')
-    lines_before   = original.count('\n')
-    lines_after    = cleaned.count('\n')
+    lines_before   = len(original.splitlines())
+    lines_after    = len(cleaned.splitlines())
 
     SP.write_text(cleaned, encoding='utf-8')
 

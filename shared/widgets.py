@@ -1461,12 +1461,14 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
             # The actual print job re-renders from fitz at 200 DPI.
             _PREVIEW_DPI = 48
             preview_cache: list[QImage] = []
+            renderable_for_print: list[str] = []
             for path in renderable:
                 ext = Path(path).suffix.lower()
                 if ext == '.pdf' and _fitz is not None:
                     try:
                         doc = _fitz.open(path)
                         try:
+                            _page_imgs: list[QImage] = []
                             for page_num in range(doc.page_count):
                                 pg = doc[page_num]
                                 pix = pg.get_pixmap(
@@ -1476,12 +1478,14 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                                     alpha=False,
                                 )
                                 samples = bytes(pix.samples)
-                                preview_cache.append(
+                                _page_imgs.append(
                                     QImage(
                                         samples, pix.width, pix.height,
                                         pix.stride, QImage.Format.Format_RGB888,
                                     ).copy()
                                 )
+                            preview_cache.extend(_page_imgs)
+                            renderable_for_print.append(path)
                         finally:
                             doc.close()
                     except Exception:
@@ -1494,6 +1498,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     img = QImage(path)
                     if not img.isNull():
                         preview_cache.append(img)
+                        renderable_for_print.append(path)
 
             def _render_to(pr: 'QPrinter', dpi: float) -> None:
                 """Render renderable files to pr at the given DPI."""
@@ -1501,7 +1506,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 try:
                     _pr = QRectF(_pa.viewport())
                     _first = True
-                    for path in renderable:
+                    for path in renderable_for_print:
                         ext = Path(path).suffix.lower()
                         if ext == '.pdf' and _fitz is not None:
                             try:
@@ -1620,29 +1625,19 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
         else:
             unprinted.append(os.path.basename(path))
 
+    sections = []
     if unprinted:
-        from PyQt6.QtWidgets import QMessageBox
         names = '\n'.join(f'  • {n}' for n in unprinted)
-        QMessageBox.warning(
-            parent, "Print",
-            f"The following file(s) could not be printed (no print handler registered):\n\n{names}"
-        )
-
+        sections.append(f"Could not be printed (no print handler registered):\n{names}")
     if failed_pre_render:
-        from PyQt6.QtWidgets import QMessageBox
         names = '\n'.join(f'  • {n}' for n in failed_pre_render)
-        QMessageBox.warning(
-            parent, "Print",
-            f"The following PDF(s) could not be loaded for preview and were skipped:\n\n{names}"
-        )
-
+        sections.append(f"Could not be loaded for preview and were skipped:\n{names}")
     if failed_print_render:
-        from PyQt6.QtWidgets import QMessageBox
         names = '\n'.join(f'  • {n}' for n in sorted(set(failed_print_render)))
-        QMessageBox.warning(
-            parent, "Print",
-            f"The following PDF(s) could not be rendered for printing:\n\n{names}"
-        )
+        sections.append(f"Could not be rendered for printing:\n{names}")
+    if sections:
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.warning(parent, "Print", "\n\n".join(sections))
 
 
 def attach_file_preview(
