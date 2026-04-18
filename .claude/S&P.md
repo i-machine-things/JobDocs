@@ -1842,3 +1842,24 @@ Consider adding defensive tracking — either log a warning if the hook is not i
 5. **`_hooked` warning-only fallback** *(duplicate — acknowledged, not changed)*
    - CodeRabbit repeated the suggestion to escalate `logger.warning` to `logger.error` + `QMessageBox` + `cancelled = True`.
    - Decision: keeping warning-only fallback. The `_hooked = False` path is a theoretical edge case (Qt6 reliably exposes the Print QAction); aborting the print dialog for it would degrade UX more than the fallback behavior.
+
+---
+
+## 2026-04-17 — `shared/widgets.py`, `build_scripts/clean_sp.py` (PR #25 run 5)
+
+**Review:** CodeRabbit PR #25 run 5 — 2 actionable (both duplicates), 3 findings fixed
+**Result:** All 3 fixed.
+
+### Findings
+
+1. **Surface high-DPI print render failures** *(fixed)*
+   - `_render_to()` at 200 DPI could fail silently after a successful 48 DPI preview, producing incomplete output with no user warning.
+   - Fix: added `failed_print_render` list; collect failures in the `except` block; show `QMessageBox.warning` after print completes.
+
+2. **`_hooked=False` must fail visibly, not silently proceed** *(fixed)*
+   - Previously the preview dialog still opened even when the Print toolbar action could not be hooked, misleading the user.
+   - Fix: `if not _hooked` now shows `QMessageBox.warning` and sets `cancelled = True`; preview only shown via `elif`.
+
+3. **`clean_sp.py`: file H1 reset leaks content inside noise blocks** *(fixed)*
+   - `^# (?!#)` reset `skip`/`depth` unconditionally; an H1 inside a discarded `<details>` block could clear the skip counter and leak noise.
+   - Fix: file H1 reset is now guarded by `skip == 0 and depth == 0`.
