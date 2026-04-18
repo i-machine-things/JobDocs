@@ -25,9 +25,10 @@ NOISE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Only genuine S&P top-level entry headings reset the depth/skip counters.
-# Matches "# Title" (file header) or "## YYYY-MM-DD — ..." (entry headers).
-_TOP_HEADING = re.compile(r'^# (?!#)|^## \d{4}-\d{2}-\d{2}')
+# Dated S&P entry headings always reset depth/skip (they are always top-level).
+_ENTRY_HEADING = re.compile(r'^## \d{4}-\d{2}-\d{2}')
+# File-level H1 only resets counters when no block state is active.
+_FILE_H1 = re.compile(r'^# (?!#)')
 
 
 def strip_noise(text: str) -> str:
@@ -41,10 +42,16 @@ def strip_noise(text: str) -> str:
         line = lines[i]
         s = line.strip()
 
-        # ── S&P top-level heading → always at depth 0, reset counters ────────
-        if _TOP_HEADING.match(s):
+        # ── S&P dated entry heading → always top-level, reset counters ─────────
+        if _ENTRY_HEADING.match(s):
             skip = 0
             depth = 0
+            out.append(line)
+            i += 1
+            continue
+
+        # ── File H1 → only reset when not inside any block ───────────────────
+        if _FILE_H1.match(s) and skip == 0 and depth == 0:
             out.append(line)
             i += 1
             continue

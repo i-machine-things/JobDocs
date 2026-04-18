@@ -1433,6 +1433,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
 
     cancelled = False
     failed_pre_render: list[str] = []
+    failed_print_render: list[str] = []
     if renderable:
         # Pre-check fitz so the paintRequested closure doesn't import on every call
         try:
@@ -1530,6 +1531,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                                     " PDF %s at %.0f DPI",
                                     path, dpi, exc_info=True,
                                 )
+                                failed_print_render.append(os.path.basename(path))
                         else:
                             img = QImage(path)
                             if img.isNull():
@@ -1589,8 +1591,14 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     "action in QPrintPreviewDialog; toolbar Print will use the "
                     "PDF preview printer instead of a real printer."
                 )
-
-            if preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    parent, "Print",
+                    "Print preview could not initialize the printer action. "
+                    "Please try printing these files with the system handler."
+                )
+                cancelled = True
+            elif preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
                 cancelled = True
 
     if cancelled:
@@ -1625,6 +1633,14 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
         QMessageBox.warning(
             parent, "Print",
             f"The following PDF(s) could not be loaded for preview and were skipped:\n\n{names}"
+        )
+
+    if failed_print_render:
+        from PyQt6.QtWidgets import QMessageBox
+        names = '\n'.join(f'  • {n}' for n in sorted(set(failed_print_render)))
+        QMessageBox.warning(
+            parent, "Print",
+            f"The following PDF(s) could not be rendered for printing:\n\n{names}"
         )
 
 
