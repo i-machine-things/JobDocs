@@ -1824,3 +1824,151 @@ Consider adding defensive tracking — either log a warning if the hook is not i
 ### Findings
 
 1. **`clean_sp.py`: heading-reset guard too broad** *(fixed)*
+
+---
+
+## 2026-04-18 — `PR #25: feat: print preview dialog` — review run 1
+
+**Actionable comments posted: 2**
+
+**♻️ Duplicate comments (1)**
+
+**shared/widgets.py (1)**
+
+`1464-1505`: _⚠️ Potential issue_ | _🟠 Major_
+
+**Failed pre-render PDFs are still attempted during the actual print pass.**
+
+`failed_pre_render` records the basename of PDFs that fail pre-rendering, but `renderable` itself is never pruned. When the user prints, `_render_to` (Line 1504) iterates the full `renderable` list and calls `_fitz.open(path)` again on the same bad files. The preview shows N pages (minus the failed PDFs), but the real print job tries to render them a second time — typically adding them to `failed_print_render` and producing a second warning dialog for the same files, and if a transient error caused the first failure the print output can diverge from what the user saw in preview.
+
+**🐛 Suggested fix: filter renderable for the print pass**
+
+```diff
+             preview_cache: list[QImage] = []
++            renderable_for_print: list[str] = []
+             for path in renderable:
+                 ext = Path(path).suffix.lower()
+                 if ext == '.pdf' and _fitz is not None:
+                     try:
+                         doc = _fitz.open(path)
+                         try:
++                            _page_imgs: list[QImage] = []
+                             for page_num in range(doc.page_count):
+                                 pg = doc[page_num]
+                                 pix = pg.get_pixmap(
+                                     matrix=_fitz.Matrix(
+                                         _PREVIEW_DPI / 72, _PREVIEW_DPI / 72
+                                     ),
+                                     alpha=False,
+                                 )
+                                 samples = bytes(pix.samples)
+-                                preview_cache.append(
++                                _page_imgs.append(
+                                     QImage(
+                                         samples, pix.width, pix.height,
+                                         pix.stride, QImage.Format.Format_RGB888,
+                                     ).copy()
+                                 )
++                            preview_cache.extend(_page_imgs)
++                            renderable_for_print.append(path)
+                         finally:
+                             doc.close()
+                     except Exception:
+                         logger.warning(
+                             "print_files_with_dialog: failed to pre-render PDF %s",
+                             path, exc_info=True,
+                         )
+                         failed_pre_render.append(os.path.basename(path))
+                 else:
+                     img = QImage(path)
+                     if not img.isNull():
+                         preview_cache.append(img)
++                        renderable_for_print.append(path)
+```
+
+Then iterate `renderable_for_print` inside `_render_to`.
+
+**🧹 Nitpick comments (2)**
+
+**shared/widgets.py (1)**
+
+`1622-1644`: **Three stacked `QMessageBox.warning` dialogs on failure paths.**
+
+When a print run has fallback failures plus PDF pre-render failures plus PDF print-render failures, the user dismisses three separate modal warnings back-to-back. Consider consolidating into a single dialog that groups the categories, e.g.:
+
+```
+Some files could not be printed:
+
+Not supported by system handler:
+  • drawing.dwg
+
+Could not be previewed (skipped):
+  • corrupt.pdf
+
+Failed during printing:
+  • encrypted.pdf
+```
+
+Also, `from PyQt6.QtWidgets import QMessageBox` is repeated three times in the same scope — hoist it once (or to the top of the function) for readability.
+
+**build_scripts/clean_sp.py (1)**
+
+`148-158`: **`lines_before`/`lines_after` count newlines, not lines.**
+
+`str.count('\n')` undercounts by one when the file doesn't end with a newline, and the label "Lines" is slightly misleading. Minor, diagnostic-only. Consider `len(original.splitlines())` for accuracy.
+
+and an opening <details...> on
+the same line, so update the logic around the re.search(r' ') branch to
+first detect inline openers (e.g., using re.search(r'(?i)<details\b') or
+checking parts for '<details') and either (a) route that line through the
+opener-handling logic instead of continuing early, or (b) process the line
+token-by-token so openers increment skip/depth and closers decrement them in
+sequence; ensure the variables skip and depth are updated in the correct order
+so the opener branch (the existing opener-handling code that adjusts skip/depth)
+runs for inline openers and prevents leaking tag text to out.
+
+In `@shared/widgets.py`:
+- Around line 1588-1605: The code currently sets cancelled = True when _hooked
+is False inside print_files_with_dialog, causing renderable files to be dropped
+instead of sent to the OS fallback; update the branch where _hooked is False to
+append the current renderable items to the fallback list (e.g., extend fallback
+with renderable or fallback += renderable) before setting cancelled = True so
+the OS print fallback (os.startfile('print') / lp) gets a chance to handle them,
+and keep the existing QMessageBox warning text unchanged.
+
+---
+
+Duplicate comments:
+In `@shared/widgets.py`:
+- Around line 1464-1505: The code records failed_pre_render basenames but never
+removes those entries from renderable, causing _render_to (function _render_to)
+to re-attempt opening the same bad PDFs during printing; fix by filtering
+renderable into a new list (e.g., renderable_for_print) excluding any paths
+whose basename is in failed_pre_render before the print pass, then iterate
+renderable_for_print inside _render_to instead of the original renderable so
+PDFs that failed pre-render are skipped during the actual print.
+
+---
+
+Nitpick comments:
+In `@build_scripts/clean_sp.py`:
+- Around line 148-158: The current lines_before/lines_after use str.count('\n')
+which miscounts lines; replace those two assignments to use
+len(original.splitlines()) and len(cleaned.splitlines()) respectively (use
+splitlines() on the original and cleaned variables), then keep the same print
+statement (or adjust the label if you want clearer wording). This change touches
+the variables lines_before and lines_after in the block that computes
+diagnostics before writing via SP.write_text.
+
+In `@shared/widgets.py`:
+- Around line 1622-1644: Consolidate the three separate QMessageBox.warning
+calls into a single warning dialog: hoist "from PyQt6.QtWidgets import
+QMessageBox" once (top of the function or scope), build a single message body
+that conditionally appends the three sections for unprinted, failed_pre_render,
+and failed_print_render (use names = '\n'.join(...) as done), and call
+QMessageBox.warning(parent, "Print", combined_message) once so users see one
+grouped dialog; preserve the existing bullet formatting and sort/deduplicate
+failed_print_render as before.
+```
+
+---
