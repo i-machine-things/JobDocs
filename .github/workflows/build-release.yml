@@ -239,7 +239,7 @@ jobs:
 
       - name: Inject version into metainfo
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}"
           VERSION="${VERSION#v}"
           DATE="$(date -u +%Y-%m-%d)"
           sed -i "s/@VERSION@/${VERSION}/g; s/@DATE@/${DATE}/g" \
