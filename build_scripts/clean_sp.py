@@ -59,6 +59,8 @@ def strip_noise(text: str) -> str:
         # ── Lines containing </details> closers ───────────────────────────────
         # Process each </details> in order; emit text segments that are outside
         # noise blocks (do not drop the entire line when closers are inline).
+        # After processing all closers, fall through to the opener branch in
+        # case the same line also contains a <details> opener.
         if re.search(r'</details>', s, re.IGNORECASE):
             parts = re.split(r'(?i)</details>', line)
             kept = []
@@ -75,8 +77,16 @@ def strip_noise(text: str) -> str:
                         depth -= 1
             if kept:
                 out.append(' '.join(kept))
-            i += 1
-            continue
+            # If the last segment of the line contains an opener, handle it now
+            # rather than continuing past it.
+            last_seg = parts[-1] if parts else ''
+            if re.search(r'<details>', last_seg, re.IGNORECASE):
+                line = last_seg   # reprocess only the tail after the last closer
+                s = line.strip()
+                # fall through to the opener branch below
+            else:
+                i += 1
+                continue
 
         # ── Opening <details> ─────────────────────────────────────────────────
         if re.search(r'<details>', s, re.IGNORECASE):

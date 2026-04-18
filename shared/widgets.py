@@ -1597,6 +1597,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     "Print preview could not initialize the printer action. "
                     "Please try printing these files with the system handler."
                 )
+                fallback.extend(renderable)
                 cancelled = True
             elif preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
                 cancelled = True
