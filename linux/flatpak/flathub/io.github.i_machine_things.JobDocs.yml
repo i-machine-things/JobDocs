@@ -33,11 +33,11 @@ modules:
         url: https://github.com/i-machine-things/JobDocs/archive/refs/tags/v0.9.0-rc3.tar.gz
         sha256: c7760b2ade80af0b0ed73c9ad7b31e2f0c46b0139f345cea2292314da260d2df
       - type: file
-        path: ../io.github.i_machine_things.JobDocs.desktop
+        path: io.github.i_machine_things.JobDocs.desktop
       - type: file
-        path: ../io.github.i_machine_things.JobDocs.metainfo.xml
+        path: io.github.i_machine_things.JobDocs.metainfo.xml
       - type: file
-        path: ../icon_256x256.png
+        path: icon_256x256.png
     build-commands:
       # Install app source
       - install -d /app/lib/JobDocs
