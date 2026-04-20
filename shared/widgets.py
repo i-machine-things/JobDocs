@@ -1593,17 +1593,16 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
             if not _hooked:
                 logger.warning(
                     "print_files_with_dialog: could not locate Print toolbar "
-                    "action in QPrintPreviewDialog; toolbar Print will use the "
-                    "PDF preview printer instead of a real printer."
+                    "action in QPrintPreviewDialog; falling back to OS handler."
                 )
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(
                     parent, "Print",
                     "Print preview could not initialize the printer action. "
-                    "Please try printing these files with the system handler."
+                    "Files will be sent to the system print handler instead."
                 )
                 fallback.extend(renderable)
-                cancelled = True
+                # Do not set cancelled — fall through so the OS handler runs.
             elif preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
                 cancelled = True
 

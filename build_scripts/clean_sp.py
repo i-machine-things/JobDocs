@@ -78,11 +78,15 @@ def strip_noise(text: str) -> str:
                         depth -= 1
             if kept:
                 out.append(' '.join(kept))
-            # If the last segment of the line contains an opener, handle it now
-            # rather than continuing past it.
-            last_seg = parts[-1] if parts else ''
-            if re.search(r'<details>', last_seg, re.IGNORECASE):
-                line = last_seg   # reprocess only the tail after the last closer
+            # If any segment contains an opener, handle it now rather than
+            # continuing past it.  Scan all parts (not just the last) so that
+            # openers embedded between two closers on the same line are caught.
+            opener_seg = next(
+                (p for p in parts if re.search(r'<details>', p, re.IGNORECASE)),
+                None,
+            )
+            if opener_seg is not None:
+                line = opener_seg  # reprocess the segment containing the opener
                 s = line.strip()
                 # fall through to the opener branch below
             else:
