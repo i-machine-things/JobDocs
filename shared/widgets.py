@@ -1598,8 +1598,11 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 finally:
                     _pa.end()
 
-            from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrintDialog
+            from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrinterInfo
             from PyQt6.QtGui import QKeySequence, QAction
+            from PyQt6.QtWidgets import (
+                QDialog, QDialogButtonBox, QFormLayout, QComboBox, QSpinBox,
+            )
 
             preview = QPrintPreviewDialog(preview_printer, parent)
             preview.resize(720, 520)
@@ -1607,8 +1610,50 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
 
             # Intercept the built-in Print toolbar button so we can render at
             # 200 DPI on a native HighResolution printer, not the PDF preview printer.
+            # QPrintDialog is intentionally avoided here: on Windows it calls
+            # DocumentProperties with DM_APPLY, which writes the chosen settings
+            # (copies, orientation) back to the system-wide printer default.
             def _do_print() -> None:
-                _print_printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+                # Build a lightweight printer-selection + copies dialog that sets
+                # properties directly on QPrinter without touching system defaults.
+                dlg = QDialog(preview)
+                dlg.setWindowTitle("Print")
+                layout = QFormLayout(dlg)
+
+                printer_combo = QComboBox()
+                available = QPrinterInfo.availablePrinters()
+                default_name = QPrinterInfo.defaultPrinter().printerName()
+                for info in available:
+                    printer_combo.addItem(info.printerName())
+                default_idx = printer_combo.findText(default_name)
+                if default_idx >= 0:
+                    printer_combo.setCurrentIndex(default_idx)
+                layout.addRow("Printer:", printer_combo)
+
+                copies_spin = QSpinBox()
+                copies_spin.setRange(1, 999)
+                copies_spin.setValue(1)
+                layout.addRow("Copies:", copies_spin)
+
+                buttons = QDialogButtonBox(
+                    QDialogButtonBox.StandardButton.Ok |
+                    QDialogButtonBox.StandardButton.Cancel
+                )
+                buttons.accepted.connect(dlg.accept)
+                buttons.rejected.connect(dlg.reject)
+                layout.addRow(buttons)
+
+                if dlg.exec() != QDialog.DialogCode.Accepted:
+                    return
+
+                selected_name = printer_combo.currentText()
+                _print_printer = QPrinter(
+                    next(
+                        (i for i in available if i.printerName() == selected_name),
+                        QPrinterInfo.defaultPrinter(),
+                    ),
+                    QPrinter.PrinterMode.HighResolution,
+                )
                 # Carry over page settings the user configured in the preview
                 # (orientation, paper size, margins) to the real print job.
                 _print_printer.setPageOrientation(preview_printer.pageLayout().orientation())
@@ -1617,9 +1662,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     preview_printer.pageLayout().margins(),
                     preview_printer.pageLayout().units(),
                 )
-                _pdlg = QPrintDialog(_print_printer, preview)
-                if _pdlg.exec() != QPrintDialog.DialogCode.Accepted:
-                    return
+                _print_printer.setCopyCount(copies_spin.value())
                 _render_to(_print_printer, 200)
                 preview.accept()
 
