@@ -2038,3 +2038,10 @@ Actionable: 2  Nitpicks: 0
 Actionable: 1  Nitpicks: 0
 - Use Flatpak's host `/etc` mapping instead of `/etc/papersize`.
 - Configuration used
+
+---
+
+## 2026-04-23 — `PR #227: feat: add Uninstall Plugin menu action` — run 1
+
+Actionable: 1  Nitpicks: 0
+- Configuration used
