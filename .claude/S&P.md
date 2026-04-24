@@ -2055,3 +2055,11 @@ Actionable: 1  Nitpicks: 0
 2. **Narrow broad `except Exception` on `shutil.rmtree`** — `main.py`
    - Overly broad catch can mask unexpected errors (S&P pattern from 2026-04-06)
    - Fix: changed to `except (OSError, shutil.Error)` — the only exceptions `rmtree` raises
+
+---
+
+## 2026-04-24 — `PR #227: feat: add Uninstall Plugin menu action` — run 1
+
+Actionable: ?  Nitpicks: 1
+- Consider sorting plugin names for deterministic selection UX.
+- Configuration used
