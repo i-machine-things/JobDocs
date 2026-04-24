@@ -2070,3 +2070,11 @@ Actionable: ?  Nitpicks: 1
 
 Actionable: 1  Nitpicks: 0
 - Configuration used
+
+---
+
+## 2026-04-24 — `PR #227: feat: add Uninstall Plugin menu action` — run 3
+
+Actionable: ?  Nitpicks: 1
+- Consider reusing shared plugin discovery logic to avoid drift.
+- Configuration used
