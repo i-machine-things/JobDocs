@@ -1696,9 +1696,8 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     preview_printer.pageLayout().units(),
                 )
                 _print_printer.setCopyCount(copies_spin.value())
+                preview.accept()
                 _render_to(_print_printer, 200)
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, preview.accept)
 
             # Hook the toolbar Print button to use our high-res render path.
             # Qt assigns QKeySequence.StandardKey.Print on Windows/macOS; on
