@@ -1542,7 +1542,6 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
 
     cancelled = False
     failed_pre_render: list[str] = []
-    failed_print_render: list[str] = []
     if renderable:
         # Pre-check fitz so the paintRequested closure doesn't import on every call
         try:
@@ -1639,55 +1638,8 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     if not img.isNull():
                         preview_cache.append(img)
                         renderable_for_print.append(path)
-
-            def _render_to(pr: 'QPrinter', dpi: float) -> None:
-                """Render renderable files to pr at the given DPI."""
-                _pa = QPainter(pr)
-                try:
-                    _pr = QRectF(_pa.viewport())
-                    _first = True
-                    for path in renderable_for_print:
-                        ext = Path(path).suffix.lower()
-                        if ext == '.pdf' and _fitz is not None:
-                            try:
-                                doc = _fitz.open(path)
-                                try:
-                                    for page_num in range(doc.page_count):
-                                        if not _first:
-                                            pr.newPage()
-                                            _pr = QRectF(_pa.viewport())
-                                        _first = False
-                                        pg = doc[page_num]
-                                        pix = pg.get_pixmap(
-                                            matrix=_fitz.Matrix(dpi / 72, dpi / 72),
-                                            alpha=False,
-                                        )
-                                        samples = bytes(pix.samples)
-                                        img = QImage(
-                                            samples, pix.width, pix.height,
-                                            pix.stride, QImage.Format.Format_RGB888,
-                                        ).copy()
-                                        _draw_image_fitted(_pa, img, _pr)
-                                finally:
-                                    doc.close()
-                            except Exception:
-                                logger.warning(
-                                    "print_files_with_dialog: failed to render"
-                                    " PDF %s at %.0f DPI",
-                                    path, dpi, exc_info=True,
-                                )
-                                failed_print_render.append(os.path.basename(path))
-                        else:
-                            img = QImage(path)
-                            if img.isNull():
-                                continue
-                            if not _first:
-                                pr.newPage()
-                                _pr = QRectF(_pa.viewport())
-                            _first = False
-                            _draw_image_fitted(_pa, img, _pr)
-                finally:
-                    _pa.end()
+                    else:
+                        failed_pre_render.append(os.path.basename(path))
 
             def do_render(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
                 # Preview only — blit 48 DPI cache into the 96 DPI preview printer
