@@ -2131,7 +2131,14 @@ Actionable: 3  Nitpicks: 0
 
 ## 2026-04-24 — `PR #226: fix: prevent print settings from leaking to system defaults` — run 3
 
-Actionable: ?  Nitpicks: 1
-- Don't silently drop unreadable images during preview preflight.
-- Remove the orphaned synchronous render path.
-- Configuration used
+Actionable: 1 (duplicate)  Nitpicks: 1 — both resolved in commit c154851
+
+### Findings
+
+1. **Null QImage silently dropped at preview preflight** — `shared/widgets.py` line ~1638
+   - Same null-image pattern as worker path; preview preflight loop also dropped files silently
+   - Fix: `else: failed_pre_render.append(os.path.basename(path))` so file surfaces in warning dialog
+
+2. **Dead `_render_to` synchronous render path** — `shared/widgets.py`
+   - `_render_to()` and `failed_print_render` were unreachable after move to `_RasterReceiver`
+   - Fix: deleted both; worker-based path is the sole render path
