@@ -1421,8 +1421,8 @@ class _PrintRasterWorker(QThread):
     the fast paint step, which runs on the main thread via the page_ready signal.
     Pages are emitted one at a time to avoid buffering an entire document in memory.
     """
-    page_ready = pyqtSignal(QImage)  # one rasterized page
-    done = pyqtSignal(list)          # failed: list[str]
+    page_ready = pyqtSignal(object)  # QImage — one rasterized page; object avoids metatype registration
+    done = pyqtSignal(object)        # list[str] — failed file names
 
     def __init__(self, files, fitz_mod, dpi):
         super().__init__()
@@ -1485,8 +1485,8 @@ class _RasterReceiver(QObject):
         self._painter = None
         self._page_rect = None
 
-    @pyqtSlot(QImage)
-    def on_page(self, img: QImage) -> None:
+    @pyqtSlot(object)
+    def on_page(self, img) -> None:
         from PyQt6.QtGui import QPainter
         from PyQt6.QtCore import QRectF
         if self._painter is None:
@@ -1497,8 +1497,8 @@ class _RasterReceiver(QObject):
             self._page_rect = QRectF(self._painter.viewport())
         _draw_image_fitted(self._painter, img, self._page_rect)
 
-    @pyqtSlot(list)
-    def on_done(self, failed: list) -> None:
+    @pyqtSlot(object)
+    def on_done(self, failed) -> None:
         if self._painter is not None:
             self._painter.end()
             self._painter = None
@@ -1756,8 +1756,10 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
 
                 _raster_worker = _PrintRasterWorker(renderable_for_print, _fitz, 200)
                 _receiver = _RasterReceiver(_print_printer, parent, _raster_worker)
-                _raster_worker.page_ready.connect(_receiver.on_page)
-                _raster_worker.done.connect(_receiver.on_done)
+                _raster_worker.page_ready.connect(
+                    _receiver.on_page, Qt.ConnectionType.QueuedConnection)
+                _raster_worker.done.connect(
+                    _receiver.on_done, Qt.ConnectionType.QueuedConnection)
                 _raster_worker.finished.connect(_raster_worker.deleteLater)
                 _active_print_workers.add(_raster_worker)
                 _active_print_workers.add(_receiver)
