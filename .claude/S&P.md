@@ -2142,3 +2142,11 @@ Actionable: 1 (duplicate)  Nitpicks: 1 — both resolved in commit c154851
 2. **Dead `_render_to` synchronous render path** — `shared/widgets.py`
    - `_render_to()` and `failed_print_render` were unreachable after move to `_RasterReceiver`
    - Fix: deleted both; worker-based path is the sole render path
+
+---
+
+## 2026-04-24 — `PR #226: fix: prevent print settings from leaking to system defaults` — run 4
+
+Actionable: 1  Nitpicks: 0
+- Skip the preview when nothing survived pre-load.
+- Configuration used
