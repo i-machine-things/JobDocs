@@ -10,8 +10,8 @@ from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QHeaderView,
     QWidget, QSplitter, QSizePolicy
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QThread
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, pyqtSlot, QSize, QThread
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QImage, QPixmap
 from pathlib import Path
 import atexit
 import logging
@@ -1418,9 +1418,11 @@ class _PrintRasterWorker(QThread):
 
     QPrinter/QPainter on Windows requires the main (GUI) thread for all GDI
     operations.  We separate the slow CPU work (PDF → QImage via PyMuPDF) from
-    the fast paint step, which runs on the main thread via the done signal.
+    the fast paint step, which runs on the main thread via the page_ready signal.
+    Pages are emitted one at a time to avoid buffering an entire document in memory.
     """
-    done = pyqtSignal(list, list)  # (images: list[QImage], failed: list[str])
+    page_ready = pyqtSignal(QImage)  # one rasterized page
+    done = pyqtSignal(list)          # failed: list[str]
 
     def __init__(self, files, fitz_mod, dpi):
         super().__init__()
@@ -1429,39 +1431,87 @@ class _PrintRasterWorker(QThread):
         self._dpi = dpi
 
     def run(self):
-        from PyQt6.QtGui import QImage
-        images: list = []
         failed: list = []
-        for path in self._files:
-            ext = Path(path).suffix.lower()
-            if ext == '.pdf' and self._fitz is not None:
-                try:
-                    doc = self._fitz.open(path)
+        try:
+            for path in self._files:
+                ext = Path(path).suffix.lower()
+                if ext == '.pdf' and self._fitz is not None:
                     try:
-                        for page_num in range(doc.page_count):
-                            pg = doc[page_num]
-                            pix = pg.get_pixmap(
-                                matrix=self._fitz.Matrix(self._dpi / 72, self._dpi / 72),
-                                alpha=False,
-                            )
-                            samples = bytes(pix.samples)
-                            images.append(QImage(
-                                samples, pix.width, pix.height,
-                                pix.stride, QImage.Format.Format_RGB888,
-                            ).copy())
-                    finally:
-                        doc.close()
-                except Exception:
-                    logger.warning(
-                        "print_files_with_dialog: failed to rasterize PDF %s",
-                        path, exc_info=True,
-                    )
-                    failed.append(os.path.basename(path))
-            else:
-                img = QImage(path)
-                if not img.isNull():
-                    images.append(img)
-        self.done.emit(images, failed)
+                        doc = self._fitz.open(path)
+                        try:
+                            for page_num in range(doc.page_count):
+                                pg = doc[page_num]
+                                pix = pg.get_pixmap(
+                                    matrix=self._fitz.Matrix(self._dpi / 72, self._dpi / 72),
+                                    alpha=False,
+                                )
+                                samples = bytes(pix.samples)
+                                img = QImage(
+                                    samples, pix.width, pix.height,
+                                    pix.stride, QImage.Format.Format_RGB888,
+                                ).copy()
+                                self.page_ready.emit(img)
+                        finally:
+                            doc.close()
+                    except Exception:
+                        logger.warning(
+                            "print_files_with_dialog: failed to rasterize PDF %s",
+                            path, exc_info=True,
+                        )
+                        failed.append(os.path.basename(path))
+                else:
+                    img = QImage(path)
+                    if not img.isNull():
+                        self.page_ready.emit(img)
+                    else:
+                        failed.append(os.path.basename(path))
+        finally:
+            self.done.emit(failed)
+
+
+class _RasterReceiver(QObject):
+    """Receives rasterized pages from _PrintRasterWorker on the main GUI thread.
+
+    Instantiated on the main thread so Qt auto-selects QueuedConnection for
+    cross-thread signal delivery, guaranteeing QPainter/QPrinter operations
+    run on the GUI thread (required by Windows GDI/COM).
+    """
+
+    def __init__(self, printer, parent_widget, worker):
+        super().__init__()
+        self._printer = printer
+        self._parent_widget = parent_widget
+        self._worker = worker
+        self._painter = None
+        self._page_rect = None
+
+    @pyqtSlot(QImage)
+    def on_page(self, img: QImage) -> None:
+        from PyQt6.QtGui import QPainter
+        from PyQt6.QtCore import QRectF
+        if self._painter is None:
+            self._painter = QPainter(self._printer)
+            self._page_rect = QRectF(self._painter.viewport())
+        else:
+            self._printer.newPage()
+            self._page_rect = QRectF(self._painter.viewport())
+        _draw_image_fitted(self._painter, img, self._page_rect)
+
+    @pyqtSlot(list)
+    def on_done(self, failed: list) -> None:
+        if self._painter is not None:
+            self._painter.end()
+            self._painter = None
+        if failed:
+            names = '\n'.join(f'  • {n}' for n in sorted(set(failed)))
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self._parent_widget, "Print",
+                f"Could not be rendered for printing:\n{names}",
+            )
+        _active_print_workers.discard(self._worker)
+        _active_print_workers.discard(self)
+        self.deleteLater()
 
 
 def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
@@ -1752,31 +1802,13 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 _print_printer.setCopyCount(copies_spin.value())
                 preview.accept()
 
-                def _on_raster_done(images, failed):
-                    # Phase 2: paint pre-rasterized images to QPrinter on the
-                    # main thread (QPrinter/GDI requires the GUI thread on Windows).
-                    from PyQt6.QtGui import QPainter
-                    from PyQt6.QtCore import QRectF
-                    _pa = QPainter(_print_printer)
-                    try:
-                        _pr = QRectF(_pa.viewport())
-                        for i, img in enumerate(images):
-                            if i > 0:
-                                _print_printer.newPage()
-                                _pr = QRectF(_pa.viewport())
-                            _draw_image_fitted(_pa, img, _pr)
-                    finally:
-                        _pa.end()
-                    if failed:
-                        names = '\n'.join(f'  • {n}' for n in sorted(set(failed)))
-                        from PyQt6.QtWidgets import QMessageBox
-                        QMessageBox.warning(parent, "Print", f"Could not be rendered for printing:\n{names}")
-                    _active_print_workers.discard(_raster_worker)
-
                 _raster_worker = _PrintRasterWorker(renderable_for_print, _fitz, 200)
-                _raster_worker.done.connect(_on_raster_done)
+                _receiver = _RasterReceiver(_print_printer, parent, _raster_worker)
+                _raster_worker.page_ready.connect(_receiver.on_page)
+                _raster_worker.done.connect(_receiver.on_done)
                 _raster_worker.finished.connect(_raster_worker.deleteLater)
                 _active_print_workers.add(_raster_worker)
+                _active_print_workers.add(_receiver)
                 _raster_worker.start()
 
             # Hook the toolbar Print button to use our high-res render path.
