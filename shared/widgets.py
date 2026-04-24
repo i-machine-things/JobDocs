@@ -1620,8 +1620,13 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 dlg.setWindowTitle("Print")
                 layout = QFormLayout(dlg)
 
-                printer_combo = QComboBox()
                 available = QPrinterInfo.availablePrinters()
+                if not available:
+                    from PyQt6.QtWidgets import QMessageBox
+                    QMessageBox.warning(preview, "Print", "No printers are available.")
+                    return
+
+                printer_combo = QComboBox()
                 default_name = QPrinterInfo.defaultPrinter().printerName()
                 for info in available:
                     printer_combo.addItem(info.printerName())

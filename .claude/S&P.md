@@ -2043,5 +2043,11 @@ Actionable: 1  Nitpicks: 0
 
 ## 2026-04-23 — `PR #226: fix: prevent print settings from leaking to system defaults` — run 1
 
-Actionable: 1  Nitpicks: 0
-- Configuration used
+**Review:** CodeRabbit flagged missing guard for empty printer list in custom print dialog.
+**Result:** Fix applied.
+
+### Findings
+
+1. **No guard when `QPrinterInfo.availablePrinters()` is empty** — `shared/widgets.py`
+   - Dialog could show with an empty combo and OK enabled, leading to a crash or nonsensical print job
+   - Fix: check `available` before building the dialog; show `QMessageBox.warning` and return early
