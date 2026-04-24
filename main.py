@@ -634,13 +634,19 @@ class JobDocsMainWindow(QMainWindow):
             return
 
         try:
-            installed = sorted(
-                [d for d in plugins_dir.iterdir() if d.is_dir() and (d / "module.py").exists()],
-                key=lambda p: p.name.lower(),
-            )
+            entries = list(plugins_dir.iterdir())
         except OSError as e:
             QMessageBox.critical(self, "Uninstall Plugin", f"Could not scan plugins directory:\n{e}")
             return
+
+        installed_raw = []
+        for d in entries:
+            try:
+                if d.is_dir() and (d / "module.py").exists():
+                    installed_raw.append(d)
+            except OSError:
+                pass
+        installed = sorted(installed_raw, key=lambda p: p.name.lower())
         if not installed:
             QMessageBox.information(self, "Uninstall Plugin", "No installed plugins found.")
             return
