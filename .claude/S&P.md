@@ -2105,3 +2105,24 @@ Actionable: 1  Nitpicks: 0
 
 Actionable: 3  Nitpicks: 0
 - Configuration used
+
+### Findings (all resolved in commit 3fdc964)
+
+1. **Plain function connected to cross-thread signal runs on worker thread** — `shared/widgets.py`
+   - `_on_raster_done` was a plain Python closure; in PyQt6 plain callables connected to a QThread
+     signal use DirectConnection and execute in the emitter's thread, not the main thread
+   - Fix: replaced with `_RasterReceiver(QObject)` whose `@pyqtSlot` methods live on the main thread;
+     Qt auto-selects QueuedConnection for cross-thread delivery to a QObject
+
+2. **All PDF pages buffered as 200 DPI QImages before painting** — `shared/widgets.py`
+   - Large documents could exhaust memory before any pages were printed
+   - Fix: `_PrintRasterWorker` now emits `page_ready(QImage)` per page; `_RasterReceiver.on_page`
+     paints each page immediately via `QPainter`, calling `newPage()` between pages
+
+3. **Null QImage silently dropped for non-PDF files** — `shared/widgets.py`
+   - If `QImage(path)` fails, the file was skipped with no user feedback
+   - Fix: `else: failed.append(os.path.basename(path))` now reports the failure
+
+4. **`done` signal never emitted if exception escapes `run()`** — `shared/widgets.py`
+   - An unhandled exception would leave `_RasterReceiver` waiting forever (painter never ended)
+   - Fix: wrapped the entire loop body in `try/finally: self.done.emit(failed)`
