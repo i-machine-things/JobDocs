@@ -1599,10 +1599,18 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     _pa.end()
 
             from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrinterInfo
-            from PyQt6.QtGui import QKeySequence, QAction
+            from PyQt6.QtGui import QKeySequence, QAction, QPageSize
             from PyQt6.QtWidgets import (
                 QDialog, QDialogButtonBox, QFormLayout, QComboBox, QSpinBox,
             )
+            _PAGE_SIZES = [
+                ('Letter (8.5 × 11")',  QPageSize.PageSizeId.Letter),
+                ('Legal (8.5 × 14")',   QPageSize.PageSizeId.Legal),
+                ('Tabloid (11 × 17")',  QPageSize.PageSizeId.Tabloid),
+                ('A3',                  QPageSize.PageSizeId.A3),
+                ('A4',                  QPageSize.PageSizeId.A4),
+                ('A5',                  QPageSize.PageSizeId.A5),
+            ]
 
             preview = QPrintPreviewDialog(preview_printer, parent)
             preview.resize(720, 520)
@@ -1640,6 +1648,16 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 copies_spin.setValue(1)
                 layout.addRow("Copies:", copies_spin)
 
+                paper_combo = QComboBox()
+                for label, _ in _PAGE_SIZES:
+                    paper_combo.addItem(label)
+                current_size_id = preview_printer.pageLayout().pageSize().id()
+                for i, (_, sid) in enumerate(_PAGE_SIZES):
+                    if sid == current_size_id:
+                        paper_combo.setCurrentIndex(i)
+                        break
+                layout.addRow("Paper:", paper_combo)
+
                 buttons = QDialogButtonBox(
                     QDialogButtonBox.StandardButton.Ok |
                     QDialogButtonBox.StandardButton.Cancel
@@ -1662,7 +1680,8 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 # Carry over page settings the user configured in the preview
                 # (orientation, paper size, margins) to the real print job.
                 _print_printer.setPageOrientation(preview_printer.pageLayout().orientation())
-                _print_printer.setPageSize(preview_printer.pageLayout().pageSize())
+                _, selected_size_id = _PAGE_SIZES[paper_combo.currentIndex()]
+                _print_printer.setPageSize(QPageSize(selected_size_id))
                 _print_printer.setPageMargins(
                     preview_printer.pageLayout().margins(),
                     preview_printer.pageLayout().units(),
