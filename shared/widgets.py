@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QHeaderView,
     QWidget, QSplitter, QSizePolicy
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QThread
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
 from pathlib import Path
 import atexit
@@ -1410,6 +1410,24 @@ def _draw_image_fitted(
     painter.drawImage(_QRectF(x, y, w, h), img)
 
 
+_active_print_workers: set = set()
+
+
+class _PrintRenderWorker(QThread):
+    """Renders a QPrinter job on a background thread."""
+    done = pyqtSignal()
+
+    def __init__(self, render_fn, printer, dpi):
+        super().__init__()
+        self._render_fn = render_fn
+        self._printer = printer
+        self._dpi = dpi
+
+    def run(self):
+        self._render_fn(self._printer, self._dpi)
+        self.done.emit()
+
+
 def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
     """Show a print dialog then render and print each file.
 
@@ -1697,7 +1715,19 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 )
                 _print_printer.setCopyCount(copies_spin.value())
                 preview.accept()
-                _render_to(_print_printer, 200)
+
+                def _on_render_done():
+                    if failed_print_render:
+                        names = '\n'.join(f'  • {n}' for n in sorted(set(failed_print_render)))
+                        from PyQt6.QtWidgets import QMessageBox
+                        QMessageBox.warning(parent, "Print", f"Could not be rendered for printing:\n{names}")
+                    _active_print_workers.discard(_render_worker)
+
+                _render_worker = _PrintRenderWorker(_render_to, _print_printer, 200)
+                _render_worker.done.connect(_on_render_done)
+                _render_worker.finished.connect(_render_worker.deleteLater)
+                _active_print_workers.add(_render_worker)
+                _render_worker.start()
 
             # Hook the toolbar Print button to use our high-res render path.
             # Qt assigns QKeySequence.StandardKey.Print on Windows/macOS; on
@@ -1753,9 +1783,6 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
     if failed_pre_render:
         names = '\n'.join(f'  • {n}' for n in failed_pre_render)
         sections.append(f"Could not be loaded for preview and were skipped:\n{names}")
-    if failed_print_render:
-        names = '\n'.join(f'  • {n}' for n in sorted(set(failed_print_render)))
-        sections.append(f"Could not be rendered for printing:\n{names}")
     if sections:
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.warning(parent, "Print", "\n\n".join(sections))
