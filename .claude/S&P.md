@@ -2126,3 +2126,12 @@ Actionable: 3  Nitpicks: 0
 4. **`done` signal never emitted if exception escapes `run()`** — `shared/widgets.py`
    - An unhandled exception would leave `_RasterReceiver` waiting forever (painter never ended)
    - Fix: wrapped the entire loop body in `try/finally: self.done.emit(failed)`
+
+---
+
+## 2026-04-24 — `PR #226: fix: prevent print settings from leaking to system defaults` — run 3
+
+Actionable: ?  Nitpicks: 1
+- Don't silently drop unreadable images during preview preflight.
+- Remove the orphaned synchronous render path.
+- Configuration used
