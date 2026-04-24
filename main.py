@@ -634,7 +634,10 @@ class JobDocsMainWindow(QMainWindow):
             return
 
         try:
-            installed = [d for d in plugins_dir.iterdir() if d.is_dir() and (d / "module.py").exists()]
+            installed = sorted(
+                [d for d in plugins_dir.iterdir() if d.is_dir() and (d / "module.py").exists()],
+                key=lambda p: p.name.lower(),
+            )
         except OSError as e:
             QMessageBox.critical(self, "Uninstall Plugin", f"Could not scan plugins directory:\n{e}")
             return
