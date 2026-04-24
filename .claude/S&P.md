@@ -2091,3 +2091,10 @@ Actionable: 1  Nitpicks: 0
 Actionable: ?  Nitpicks: 1
 - Consider reusing shared plugin discovery logic to avoid drift.
 - Configuration used
+
+---
+
+## 2026-04-24 — `PR #226: fix: prevent print settings from leaking to system defaults` — run 1
+
+Actionable: 1  Nitpicks: 0
+- Configuration used
