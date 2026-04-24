@@ -1413,19 +1413,55 @@ def _draw_image_fitted(
 _active_print_workers: set = set()
 
 
-class _PrintRenderWorker(QThread):
-    """Renders a QPrinter job on a background thread."""
-    done = pyqtSignal()
+class _PrintRasterWorker(QThread):
+    """Rasterizes print files to QImages on a background thread.
 
-    def __init__(self, render_fn, printer, dpi):
+    QPrinter/QPainter on Windows requires the main (GUI) thread for all GDI
+    operations.  We separate the slow CPU work (PDF → QImage via PyMuPDF) from
+    the fast paint step, which runs on the main thread via the done signal.
+    """
+    done = pyqtSignal(list, list)  # (images: list[QImage], failed: list[str])
+
+    def __init__(self, files, fitz_mod, dpi):
         super().__init__()
-        self._render_fn = render_fn
-        self._printer = printer
+        self._files = files
+        self._fitz = fitz_mod
         self._dpi = dpi
 
     def run(self):
-        self._render_fn(self._printer, self._dpi)
-        self.done.emit()
+        from PyQt6.QtGui import QImage
+        images: list = []
+        failed: list = []
+        for path in self._files:
+            ext = Path(path).suffix.lower()
+            if ext == '.pdf' and self._fitz is not None:
+                try:
+                    doc = self._fitz.open(path)
+                    try:
+                        for page_num in range(doc.page_count):
+                            pg = doc[page_num]
+                            pix = pg.get_pixmap(
+                                matrix=self._fitz.Matrix(self._dpi / 72, self._dpi / 72),
+                                alpha=False,
+                            )
+                            samples = bytes(pix.samples)
+                            images.append(QImage(
+                                samples, pix.width, pix.height,
+                                pix.stride, QImage.Format.Format_RGB888,
+                            ).copy())
+                    finally:
+                        doc.close()
+                except Exception:
+                    logger.warning(
+                        "print_files_with_dialog: failed to rasterize PDF %s",
+                        path, exc_info=True,
+                    )
+                    failed.append(os.path.basename(path))
+            else:
+                img = QImage(path)
+                if not img.isNull():
+                    images.append(img)
+        self.done.emit(images, failed)
 
 
 def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
@@ -1716,18 +1752,32 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 _print_printer.setCopyCount(copies_spin.value())
                 preview.accept()
 
-                def _on_render_done():
-                    if failed_print_render:
-                        names = '\n'.join(f'  • {n}' for n in sorted(set(failed_print_render)))
+                def _on_raster_done(images, failed):
+                    # Phase 2: paint pre-rasterized images to QPrinter on the
+                    # main thread (QPrinter/GDI requires the GUI thread on Windows).
+                    from PyQt6.QtGui import QPainter
+                    from PyQt6.QtCore import QRectF
+                    _pa = QPainter(_print_printer)
+                    try:
+                        _pr = QRectF(_pa.viewport())
+                        for i, img in enumerate(images):
+                            if i > 0:
+                                _print_printer.newPage()
+                                _pr = QRectF(_pa.viewport())
+                            _draw_image_fitted(_pa, img, _pr)
+                    finally:
+                        _pa.end()
+                    if failed:
+                        names = '\n'.join(f'  • {n}' for n in sorted(set(failed)))
                         from PyQt6.QtWidgets import QMessageBox
                         QMessageBox.warning(parent, "Print", f"Could not be rendered for printing:\n{names}")
-                    _active_print_workers.discard(_render_worker)
+                    _active_print_workers.discard(_raster_worker)
 
-                _render_worker = _PrintRenderWorker(_render_to, _print_printer, 200)
-                _render_worker.done.connect(_on_render_done)
-                _render_worker.finished.connect(_render_worker.deleteLater)
-                _active_print_workers.add(_render_worker)
-                _render_worker.start()
+                _raster_worker = _PrintRasterWorker(renderable_for_print, _fitz, 200)
+                _raster_worker.done.connect(_on_raster_done)
+                _raster_worker.finished.connect(_raster_worker.deleteLater)
+                _active_print_workers.add(_raster_worker)
+                _raster_worker.start()
 
             # Hook the toolbar Print button to use our high-res render path.
             # Qt assigns QKeySequence.StandardKey.Print on Windows/macOS; on
