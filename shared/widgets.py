@@ -1634,13 +1634,17 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     QMessageBox.warning(preview, "Print", "No printers are available.")
                     return
 
+                saved_printer = app_context.get_setting('print_printer', '') if app_context else ''
+                saved_paper = app_context.get_setting('print_paper', '') if app_context else ''
+
                 printer_combo = QComboBox()
                 default_name = QPrinterInfo.defaultPrinter().printerName()
                 for info in available:
                     printer_combo.addItem(info.printerName())
-                default_idx = printer_combo.findText(default_name)
-                if default_idx >= 0:
-                    printer_combo.setCurrentIndex(default_idx)
+                preferred_printer = saved_printer or default_name
+                pref_idx = printer_combo.findText(preferred_printer)
+                if pref_idx >= 0:
+                    printer_combo.setCurrentIndex(pref_idx)
                 layout.addRow("Printer:", printer_combo)
 
                 copies_spin = QSpinBox()
@@ -1652,10 +1656,11 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 for label, _ in _PAGE_SIZES:
                     paper_combo.addItem(label)
                 current_size_id = preview_printer.pageLayout().pageSize().id()
-                for i, (_, sid) in enumerate(_PAGE_SIZES):
-                    if sid == current_size_id:
-                        paper_combo.setCurrentIndex(i)
-                        break
+                paper_idx = next(
+                    (i for i, (_, sid) in enumerate(_PAGE_SIZES) if sid.name == saved_paper),
+                    next((i for i, (_, sid) in enumerate(_PAGE_SIZES) if sid == current_size_id), 0),
+                )
+                paper_combo.setCurrentIndex(paper_idx)
                 layout.addRow("Paper:", paper_combo)
 
                 buttons = QDialogButtonBox(
@@ -1670,6 +1675,13 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     return
 
                 selected_name = printer_combo.currentText()
+                _, selected_size_id = _PAGE_SIZES[paper_combo.currentIndex()]
+
+                if app_context is not None:
+                    app_context.set_setting('print_printer', selected_name)
+                    app_context.set_setting('print_paper', selected_size_id.name)
+                    app_context.save_settings()
+
                 _print_printer = QPrinter(
                     next(
                         (i for i in available if i.printerName() == selected_name),
@@ -1677,10 +1689,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     ),
                     QPrinter.PrinterMode.HighResolution,
                 )
-                # Carry over page settings the user configured in the preview
-                # (orientation, paper size, margins) to the real print job.
                 _print_printer.setPageOrientation(preview_printer.pageLayout().orientation())
-                _, selected_size_id = _PAGE_SIZES[paper_combo.currentIndex()]
                 _print_printer.setPageSize(QPageSize(selected_size_id))
                 _print_printer.setPageMargins(
                     preview_printer.pageLayout().margins(),
