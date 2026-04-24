@@ -633,7 +633,11 @@ class JobDocsMainWindow(QMainWindow):
             QMessageBox.information(self, "Uninstall Plugin", "No plugins directory found.")
             return
 
-        installed = [d for d in plugins_dir.iterdir() if d.is_dir() and (d / "module.py").exists()]
+        try:
+            installed = [d for d in plugins_dir.iterdir() if d.is_dir() and (d / "module.py").exists()]
+        except OSError as e:
+            QMessageBox.critical(self, "Uninstall Plugin", f"Could not scan plugins directory:\n{e}")
+            return
         if not installed:
             QMessageBox.information(self, "Uninstall Plugin", "No installed plugins found.")
             return
@@ -656,7 +660,7 @@ class JobDocsMainWindow(QMainWindow):
         target = plugins_dir / choice
         try:
             shutil.rmtree(target)
-        except Exception as e:
+        except (OSError, shutil.Error) as e:
             QMessageBox.critical(self, "Uninstall Plugin", f"Failed to remove plugin:\n{e}")
             return
 

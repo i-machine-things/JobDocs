@@ -2043,5 +2043,15 @@ Actionable: 1  Nitpicks: 0
 
 ## 2026-04-23 — `PR #227: feat: add Uninstall Plugin menu action` — run 1
 
-Actionable: 1  Nitpicks: 0
-- Configuration used
+**Review:** CodeRabbit flagged unsafe exception handling in `uninstall_plugin`.
+**Result:** Both fixes applied.
+
+### Findings
+
+1. **Wrap `plugins_dir.iterdir()` in `OSError` handler** — `main.py`
+   - Directory scan could raise `OSError` (e.g. permission denied, path removed between check and scan)
+   - Fix: wrapped list comprehension in `try/except OSError`; shows `QMessageBox.critical` and returns
+
+2. **Narrow broad `except Exception` on `shutil.rmtree`** — `main.py`
+   - Overly broad catch can mask unexpected errors (S&P pattern from 2026-04-06)
+   - Fix: changed to `except (OSError, shutil.Error)` — the only exceptions `rmtree` raises
