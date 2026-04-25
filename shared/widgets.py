@@ -1608,18 +1608,29 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
             # Intercept the built-in Print toolbar button so we can render at
             # 200 DPI on a native HighResolution printer, not the PDF preview printer.
             def _do_print() -> None:
-                _print_printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-                # Carry over page settings the user configured in the preview
-                # (orientation, paper size, margins) to the real print job.
-                _print_printer.setPageOrientation(preview_printer.pageLayout().orientation())
-                _print_printer.setPageSize(preview_printer.pageLayout().pageSize())
-                _print_printer.setPageMargins(
+                # ScreenResolution avoids writing settings back to the Windows
+                # system default printer when the dialog is accepted.
+                _dlg_printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+                _dlg_printer.setPageOrientation(preview_printer.pageLayout().orientation())
+                _dlg_printer.setPageSize(preview_printer.pageLayout().pageSize())
+                _dlg_printer.setPageMargins(
                     preview_printer.pageLayout().margins(),
                     preview_printer.pageLayout().units(),
                 )
-                _pdlg = QPrintDialog(_print_printer, preview)
+                _pdlg = QPrintDialog(_dlg_printer, preview)
                 if _pdlg.exec() != QPrintDialog.DialogCode.Accepted:
                     return
+                # Render at high resolution using a fresh printer seeded from
+                # the dialog result so Windows system defaults are never touched.
+                _print_printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+                _print_printer.setPrinterName(_dlg_printer.printerName())
+                _print_printer.setPageOrientation(_dlg_printer.pageLayout().orientation())
+                _print_printer.setPageSize(_dlg_printer.pageLayout().pageSize())
+                _print_printer.setPageMargins(
+                    _dlg_printer.pageLayout().margins(),
+                    _dlg_printer.pageLayout().units(),
+                )
+                _print_printer.setCopyCount(_dlg_printer.copyCount())
                 _render_to(_print_printer, 200)
                 preview.accept()
 
