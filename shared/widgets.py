@@ -1491,6 +1491,15 @@ class _RasterReceiver(QObject):
         from PyQt6.QtCore import QRectF
         if self._painter is None:
             self._painter = QPainter(self._printer)
+            if not self._painter.isActive():
+                # StartDoc failed (offline printer, spooler error, bad driver).
+                # Discard the painter so on_done skips end() and the worker
+                # thread can finish cleanly without further GDI calls.
+                logger.error("print_files_with_dialog: QPainter failed to start on printer %s",
+                             self._printer.printerName())
+                self._painter = None
+                self._worker.requestInterruption()
+                return
             self._page_rect = QRectF(self._painter.viewport())
         else:
             self._printer.newPage()
@@ -1502,6 +1511,10 @@ class _RasterReceiver(QObject):
         if self._painter is not None:
             self._painter.end()
             self._painter = None
+        elif not failed:
+            # Painter never started — treat all files as failed so the user
+            # gets an error message instead of silent no-output.
+            failed = [os.path.basename(p) for p in (self._worker._files or [])]
         if failed:
             names = '\n'.join(f'  • {n}' for n in sorted(set(failed)))
             from PyQt6.QtWidgets import QMessageBox
