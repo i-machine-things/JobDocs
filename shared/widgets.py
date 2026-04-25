@@ -1641,6 +1641,16 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     else:
                         failed_pre_render.append(os.path.basename(path))
 
+            if not renderable_for_print:
+                if failed_pre_render:
+                    from PyQt6.QtWidgets import QMessageBox
+                    QMessageBox.warning(
+                        parent, "Print",
+                        "Could not load the following file(s) for printing:\n\n"
+                        + "\n".join(failed_pre_render),
+                    )
+                return
+
             def do_render(pr: 'QPrinter') -> None:  # type: ignore[name-defined]
                 # Preview only — blit 48 DPI cache into the 96 DPI preview printer
                 _pa = QPainter(pr)
@@ -1677,7 +1687,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
             # QPrintDialog is intentionally avoided here: on Windows it calls
             # DocumentProperties with DM_APPLY, which writes the chosen settings
             # (copies, orientation) back to the system-wide printer default.
-            def _do_print() -> None:
+            def _do_print() -> bool:
                 # Build a lightweight printer-selection + copies dialog that sets
                 # properties directly on QPrinter without touching system defaults.
                 dlg = QDialog(preview)
@@ -1688,7 +1698,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 if not available:
                     from PyQt6.QtWidgets import QMessageBox
                     QMessageBox.warning(preview, "Print", "No printers are available.")
-                    return
+                    return False
 
                 saved_printer = app_context.get_setting('print_printer', '') if app_context else ''
                 saved_paper = app_context.get_setting('print_paper', '') if app_context else ''
@@ -1728,7 +1738,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 layout.addRow(buttons)
 
                 if dlg.exec() != QDialog.DialogCode.Accepted:
-                    return
+                    return False
 
                 selected_name = printer_combo.currentText()
                 _, selected_size_id = _PAGE_SIZES[paper_combo.currentIndex()]
@@ -1764,6 +1774,7 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                 _active_print_workers.add(_raster_worker)
                 _active_print_workers.add(_receiver)
                 _raster_worker.start()
+                return True
 
             # Hook the toolbar Print button to use our high-res render path.
             # Qt assigns QKeySequence.StandardKey.Print on Windows/macOS; on
@@ -1789,7 +1800,8 @@ def print_files_with_dialog(paths: list, parent=None, app_context=None) -> None:
                     "print_files_with_dialog: could not locate Print toolbar "
                     "action in QPrintPreviewDialog; printing directly at high resolution."
                 )
-                _do_print()
+                if not _do_print():
+                    cancelled = True
             else:
                 if preview.exec() != QPrintPreviewDialog.DialogCode.Accepted:
                     cancelled = True
