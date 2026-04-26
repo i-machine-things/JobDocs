@@ -1419,27 +1419,45 @@ class _PrintRasterWorker(QThread):
     QPrinter/QPainter on Windows requires the main (GUI) thread for all GDI
     operations.  We separate the slow CPU work (PDF → QImage via PyMuPDF) from
     the fast paint step, which runs on the main thread via the page_ready signal.
-    Pages are emitted one at a time to avoid buffering an entire document in memory.
+
+    A threading.Event gate (_page_ack) enforces one-page-at-a-time flow:
+    the worker blocks after each emit until the GUI thread signals the page
+    has been painted.  This prevents all rasterized pages from piling up in
+    the Qt event queue while Windows' "Save As" dialog (shown by PDF printer
+    drivers during StartDoc) is blocking the GUI thread.
     """
-    page_ready = pyqtSignal(object)  # QImage — one rasterized page; object avoids metatype registration
+    page_ready = pyqtSignal(object)  # QImage — one rasterized page
     done = pyqtSignal(object)        # list[str] — failed file names
 
     def __init__(self, files, fitz_mod, dpi):
+        import threading
         super().__init__()
         self._files = files
         self._fitz = fitz_mod
         self._dpi = dpi
+        self._page_ack = threading.Event()
+
+    def _emit_page(self, img) -> bool:
+        """Emit one page and wait for the GUI thread to paint it. Returns False if interrupted."""
+        self._page_ack.clear()
+        self.page_ready.emit(img)
+        self._page_ack.wait()
+        return not self.isInterruptionRequested()
 
     def run(self):
         failed: list = []
         try:
             for path in self._files:
+                if self.isInterruptionRequested():
+                    break
                 ext = Path(path).suffix.lower()
                 if ext == '.pdf' and self._fitz is not None:
                     try:
                         doc = self._fitz.open(path)
                         try:
                             for page_num in range(doc.page_count):
+                                if self.isInterruptionRequested():
+                                    break
                                 pg = doc[page_num]
                                 pix = pg.get_pixmap(
                                     matrix=self._fitz.Matrix(self._dpi / 72, self._dpi / 72),
@@ -1450,7 +1468,8 @@ class _PrintRasterWorker(QThread):
                                     samples, pix.width, pix.height,
                                     pix.stride, QImage.Format.Format_RGB888,
                                 ).copy()
-                                self.page_ready.emit(img)
+                                if not self._emit_page(img):
+                                    break
                         finally:
                             doc.close()
                     except Exception:
@@ -1461,10 +1480,10 @@ class _PrintRasterWorker(QThread):
                         failed.append(os.path.basename(path))
                 else:
                     img = QImage(path)
-                    if not img.isNull():
-                        self.page_ready.emit(img)
-                    else:
+                    if img.isNull():
                         failed.append(os.path.basename(path))
+                    elif not self._emit_page(img):
+                        break
         finally:
             self.done.emit(failed)
 
@@ -1484,27 +1503,33 @@ class _RasterReceiver(QObject):
         self._worker = worker
         self._painter = None
         self._page_rect = None
+        self._start_failed = False  # set True once StartDoc failure is detected
 
     @pyqtSlot(object)
     def on_page(self, img) -> None:
         from PyQt6.QtGui import QPainter
         from PyQt6.QtCore import QRectF
+        if self._start_failed:
+            # StartDoc already failed — ack so the worker can exit cleanly.
+            self._worker._page_ack.set()
+            return
         if self._painter is None:
             self._painter = QPainter(self._printer)
             if not self._painter.isActive():
-                # StartDoc failed (offline printer, spooler error, bad driver).
-                # Discard the painter so on_done skips end() and the worker
-                # thread can finish cleanly without further GDI calls.
                 logger.error("print_files_with_dialog: QPainter failed to start on printer %s",
                              self._printer.printerName())
                 self._painter = None
+                self._start_failed = True
                 self._worker.requestInterruption()
+                self._worker._page_ack.set()
                 return
             self._page_rect = QRectF(self._painter.viewport())
         else:
             self._printer.newPage()
             self._page_rect = QRectF(self._painter.viewport())
         _draw_image_fitted(self._painter, img, self._page_rect)
+        # Unblock the worker so it can rasterize the next page.
+        self._worker._page_ack.set()
 
     @pyqtSlot(object)
     def on_done(self, failed) -> None:
