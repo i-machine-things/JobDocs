@@ -2358,3 +2358,12 @@ Actionable: 1  Nitpicks: 0
 1. **OSError path must not commit partial walk results**
    - `completed = True` in `except OSError` allowed a failed walk to purge good cached data.
    - Fix: set `completed = False` so the `if completed:` block is skipped entirely on error.
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 9
+
+Actionable: ?  Nitpicks: 0
+- Blueprint stale detection is too shallow (root-only mtime check).
+- `os.walk` errors can still lead to committing partial blueprint indexes.
+- Configuration used
