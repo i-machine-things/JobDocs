@@ -2255,3 +2255,15 @@ Actionable: ?  Nitpicks: 1
 Actionable: 1  Nitpicks: 0
 - Narrow PDF parse exception handling and keep traceback in debug logs.
 - Configuration used
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 1
+
+Actionable: ?  Nitpicks: 4
+- Narrow exception type from `Exception` to `OSError`.
+- Consider adding a result limit to prevent excessive memory usage.
+- Consider adding a composite index for faster DELETE operations.
+- Move import to top of file.
+- Duplicate PRAGMA statements.
+- Configuration used
