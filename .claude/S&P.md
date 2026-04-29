@@ -2267,3 +2267,13 @@ Actionable: ?  Nitpicks: 4
 - Move import to top of file.
 - Duplicate PRAGMA statements.
 - Configuration used
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 2
+
+Actionable: ?  Nitpicks: 2
+- `IndexWorker` is still not cleaned up on module shutdown.
+- Broad exception catch is acceptable here but consider being more specific.
+- Consider adding error handling for index queries.
+- Configuration used
