@@ -24,7 +24,7 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6 import uic
 
 from core.base_module import BaseModule
-from core.search_index import SearchIndex
+from core.search_index import SearchIndex, _parse_job_folder
 from shared.utils import open_folder, get_config_dir
 from shared.widgets import print_files_with_dialog
 
@@ -124,22 +124,9 @@ class SearchWorker(QThread):
                     if not dir_name or not dir_name[0].isdigit():
                         continue
 
-                    # Parse folder name into components
-                    parts = dir_name.split('_')
-                    job_num = parts[0] if parts else ""
-                    remaining_parts = parts[1:] if len(parts) > 1 else []
-
-                    drawings = []
-                    desc_parts = []
-
-                    if remaining_parts:
-                        if '-' in remaining_parts[-1]:
-                            drawings = [d.strip() for d in remaining_parts[-1].split('-') if d.strip()]
-                            desc_parts = remaining_parts[:-1]
-                        else:
-                            desc_parts = remaining_parts
-
-                    desc = ' '.join(desc_parts) if desc_parts else ""
+                    # Parse folder name — shared parser keeps strict-mode results
+                    # consistent whether the index is ready or not.
+                    job_num, desc, drawings = _parse_job_folder(dir_name)
 
                     # Check for matches
                     match = customer_match

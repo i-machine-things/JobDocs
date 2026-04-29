@@ -255,6 +255,17 @@ class SearchIndex:
                         for d in container_dirs:
                             self._mark_indexed(conn, d, prefix)
 
+                        # Prune indexed_dirs rows for containers that no longer
+                        # exist (deleted job folders). Without this, _is_stale()
+                        # returns True for the missing path forever and the
+                        # customer is re-indexed on every launch.
+                        stale_containers = prev_containers - container_dirs
+                        for d in stale_containers:
+                            conn.execute(
+                                "DELETE FROM indexed_dirs WHERE dir_path=? AND prefix=?",
+                                (d, prefix),
+                            )
+
                 # --- Blueprint / IR dirs ---
                 for prefix, base_dir in bp_dirs:
                     if _cancelled():
