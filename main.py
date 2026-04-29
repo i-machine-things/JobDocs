@@ -18,7 +18,7 @@ import zipfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QMessageBox, QDialog,
@@ -697,6 +697,9 @@ class JobDocsMainWindow(QMainWindow):
             # Populate customer lists in all modules
             self.populate_customer_lists()
 
+            # Kick off the search index build after the event loop starts
+            QTimer.singleShot(0, self._start_search_indexer)
+
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -705,6 +708,11 @@ class JobDocsMainWindow(QMainWindow):
             )
             import traceback
             traceback.print_exc()
+
+    def _start_search_indexer(self):
+        for module in self.modules:
+            if hasattr(module, 'start_indexer'):
+                module.start_indexer()
 
     # ==================== Menu ====================
 
