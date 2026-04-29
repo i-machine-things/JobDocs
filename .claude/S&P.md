@@ -2277,3 +2277,13 @@ Actionable: ?  Nitpicks: 2
 - Broad exception catch is acceptable here but consider being more specific.
 - Consider adding error handling for index queries.
 - Configuration used
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 3
+
+Actionable: 2  Nitpicks: 0
+- Purge customers that disappeared from `base_dir`.
+- Skip reindexing when `find_job_folders()` fails.
+- Make the blueprint rebuild succeed before you mark it fresh.
+- Configuration used
