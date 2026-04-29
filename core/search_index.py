@@ -61,20 +61,38 @@ CREATE INDEX IF NOT EXISTS idx_bp_cust      ON bp_files(customer COLLATE NOCASE)
 """
 
 
+import re as _re
+
 def _parse_job_folder(dir_name: str) -> Tuple[str, str, List[str]]:
-    """Extract (job_number, description, drawings) from a folder name."""
-    parts = dir_name.split('_')
-    job_number = parts[0] if parts else ''
-    remaining = parts[1:] if len(parts) > 1 else []
-    drawings: List[str] = []
-    desc_parts: List[str] = []
-    if remaining:
-        if '-' in remaining[-1]:
-            drawings = [d.strip() for d in remaining[-1].split('-') if d.strip()]
-            desc_parts = remaining[:-1]
+    """Extract (job_number, description, drawings) from a folder name.
+
+    Handles underscore-separated names (12345_Desc_DWG-A) and free-form names
+    that start with a job number but use spaces, dashes, or no separator
+    (e.g. '12345 Bracket Assembly', '12345-Shaft').
+    """
+    m = _re.match(r'^(\d+)', dir_name)
+    if not m:
+        return '', dir_name, []
+    job_number = m.group(1)
+    remainder = dir_name[m.end():].lstrip('_- ')
+
+    if not remainder:
+        return job_number, '', []
+
+    # Underscore-separated: use existing drawings heuristic
+    if '_' in remainder:
+        parts = remainder.split('_')
+        if '-' in parts[-1]:
+            drawings = [d.strip() for d in parts[-1].split('-') if d.strip()]
+            desc = ' '.join(parts[:-1])
         else:
-            desc_parts = remaining
-    return job_number, ' '.join(desc_parts), drawings
+            drawings = []
+            desc = ' '.join(parts)
+    else:
+        drawings = []
+        desc = remainder
+
+    return job_number, desc, drawings
 
 
 class SearchIndex:
