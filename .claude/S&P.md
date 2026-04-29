@@ -2345,3 +2345,11 @@ Actionable: 1  Nitpicks: 0
 1. **LIKE patterns in indexed_dirs queries escaped** (`core/search_index.py`)
    - Added `_like_prefix(path)` helper using `!` as ESCAPE char (avoids conflicting with Windows `\` path separators).
    - Updated both `prev_containers` and `prev_indexed` queries to use `_like_prefix()` with `ESCAPE '!'`.
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 9
+
+Actionable: ?  Nitpicks: 0
+- Don't treat a failed blueprint walk as a fresh index.
+- Configuration used
