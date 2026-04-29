@@ -964,8 +964,10 @@ class SearchModule(BaseModule):
 
     def cleanup(self):
         """Cleanup resources"""
-        # Stop any running worker thread
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self._worker.wait()
+        if self._index_worker and self._index_worker.isRunning():
+            self._index_worker.cancel()
+            self._index_worker.wait()
         self.search_results.clear()

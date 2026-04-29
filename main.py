@@ -6,6 +6,7 @@ Main application entry point using the modular plugin architecture.
 """
 
 import io
+import logging
 import os
 import shutil
 import subprocess
@@ -25,6 +26,8 @@ from PyQt6.QtWidgets import (
     QInputDialog, QLineEdit, QProgressDialog,
     QVBoxLayout, QLabel, QCheckBox, QDialogButtonBox,
 )
+
+logger = logging.getLogger(__name__)
 
 from core.module_loader import ModuleLoader
 from core.app_context import AppContext
@@ -712,7 +715,10 @@ class JobDocsMainWindow(QMainWindow):
     def _start_search_indexer(self):
         for module in self.modules:
             if hasattr(module, 'start_indexer'):
-                module.start_indexer()
+                try:
+                    module.start_indexer()
+                except Exception as exc:
+                    logger.warning("_start_search_indexer: %s: %s", module.__class__.__name__, exc)
 
     # ==================== Menu ====================
 

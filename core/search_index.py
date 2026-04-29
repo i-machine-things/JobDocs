@@ -178,20 +178,33 @@ class SearchIndex:
                     except OSError:
                         continue
 
+                    # Finding 1: purge rows for customers that no longer exist on disk
+                    if not _cancelled():
+                        customer_set = set(customers)
+                        conn.execute(
+                            """DELETE FROM jobs WHERE prefix=? AND customer NOT IN
+                               (SELECT DISTINCT customer FROM jobs
+                                WHERE prefix=? AND customer IN ({}))""".format(
+                                ','.join('?' * len(customer_set))
+                            ),
+                            (prefix, prefix, *customer_set),
+                        ) if customer_set else conn.execute(
+                            "DELETE FROM jobs WHERE prefix=?", (prefix,)
+                        )
+
                     for customer in customers:
                         if _cancelled():
                             return
                         customer_path = os.path.join(base_dir, customer)
 
-                        # Call find_job_folders first so we can track the mtime of
-                        # the directories that ACTUALLY contain job folders.
-                        # Tracking customer_path alone misses changes to subdirs like
-                        # "job documents/" whose mtime changes when jobs are added.
+                        # Track mtime of the directory that ACTUALLY contains job
+                        # folders (e.g. "job documents/"), not just customer_path —
+                        # adding jobs inside a subdir doesn't update customer_path mtime.
                         try:
                             jobs = app_context.find_job_folders(customer_path)
                         except Exception as exc:
                             logger.warning("search_index: find_job_folders(%s): %s", customer_path, exc)
-                            jobs = []
+                            continue  # Finding 2: skip entirely on scan failure; don't erase existing rows
 
                         container_dirs = (
                             {str(Path(p).parent) for _, p in jobs}
@@ -202,6 +215,9 @@ class SearchIndex:
                             continue
 
                         _emit(f"Indexing {customer}…")
+
+                        # Finding 2: delete AFTER successful scan so a scan failure
+                        # doesn't leave the customer with zero indexed rows.
                         conn.execute(
                             "DELETE FROM jobs WHERE customer=? AND prefix=?",
                             (customer, prefix),
@@ -236,10 +252,11 @@ class SearchIndex:
                     _emit(f"Indexing {prefix} files…")
                     conn.execute("DELETE FROM bp_files WHERE prefix=?", (prefix,))
 
+                    completed = False
                     try:
                         for root, _dirs, files in os.walk(base_dir):
                             if _cancelled():
-                                return
+                                break
                             rel_path = os.path.relpath(root, base_dir)
                             path_parts = rel_path.split(os.sep)
                             customer = path_parts[0] if path_parts and path_parts[0] != '.' else ''
@@ -258,10 +275,14 @@ class SearchIndex:
                                      os.path.splitext(filename)[0],
                                      root, rel_path, mtime),
                                 )
+                        else:
+                            completed = True
                     except OSError:
-                        pass
+                        completed = True  # partial walk still worth caching
 
-                    self._mark_indexed(conn, base_dir, prefix)
+                    # Finding 3: only mark indexed after a complete (non-cancelled) walk
+                    if completed:
+                        self._mark_indexed(conn, base_dir, prefix)
 
         except sqlite3.OperationalError as exc:
             # Another writer holds the lock — skip this update cycle
