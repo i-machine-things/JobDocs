@@ -8,6 +8,7 @@ whose mtime has changed since the last run.
 
 import logging
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime
@@ -17,9 +18,6 @@ from typing import Callable, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 _SCHEMA = """
-PRAGMA journal_mode=WAL;
-PRAGMA synchronous=NORMAL;
-
 CREATE TABLE IF NOT EXISTS jobs (
     id          INTEGER PRIMARY KEY,
     prefix      TEXT    NOT NULL DEFAULT '',
@@ -52,16 +50,22 @@ CREATE TABLE IF NOT EXISTS indexed_dirs (
     PRIMARY KEY (dir_path, prefix)
 );
 
-CREATE INDEX IF NOT EXISTS idx_jobs_number  ON jobs(job_number  COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS idx_jobs_cust    ON jobs(customer    COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS idx_jobs_desc    ON jobs(description COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS idx_jobs_draw    ON jobs(drawings    COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS idx_bp_filename  ON bp_files(filename COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS idx_bp_cust      ON bp_files(customer COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_number      ON jobs(job_number  COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_cust        ON jobs(customer    COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_desc        ON jobs(description COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_draw        ON jobs(drawings    COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_cust_prefix ON jobs(customer, prefix);
+CREATE INDEX IF NOT EXISTS idx_bp_filename      ON bp_files(filename COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_bp_cust          ON bp_files(customer COLLATE NOCASE);
 """
 
+_MAX_RESULTS = 500
 
-import re as _re
+
+def _escape_like(term: str) -> str:
+    """Escape SQL LIKE special characters so literal underscores and percent signs match."""
+    return term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
 
 def _parse_job_folder(dir_name: str) -> Tuple[str, str, List[str]]:
     """Extract (job_number, description, drawings) from a folder name.
@@ -70,7 +74,7 @@ def _parse_job_folder(dir_name: str) -> Tuple[str, str, List[str]]:
     that start with a job number but use spaces, dashes, or no separator
     (e.g. '12345 Bracket Assembly', '12345-Shaft').
     """
-    m = _re.match(r'^(\d+)', dir_name)
+    m = re.match(r'^(\d+)', dir_name)
     if not m:
         return '', dir_name, []
     job_number = m.group(1)
@@ -79,7 +83,6 @@ def _parse_job_folder(dir_name: str) -> Tuple[str, str, List[str]]:
     if not remainder:
         return job_number, '', []
 
-    # Underscore-separated: use existing drawings heuristic
     if '_' in remainder:
         parts = remainder.split('_')
         if '-' in parts[-1]:
@@ -149,8 +152,8 @@ class SearchIndex:
 
     def update(
         self,
-        cf_dirs: List[Tuple[str, str]],      # [(prefix, base_dir), ...]
-        bp_dirs: List[Tuple[str, str]],      # [(prefix, base_dir), ...]
+        cf_dirs: List[Tuple[str, str]],
+        bp_dirs: List[Tuple[str, str]],
         app_context,
         progress: Optional[Callable[[str], None]] = None,
         cancelled: Optional[Callable[[], bool]] = None,
@@ -178,46 +181,56 @@ class SearchIndex:
                     except OSError:
                         continue
 
-                    # Finding 1: purge rows for customers that no longer exist on disk
+                    # Purge rows for customers that no longer exist on disk.
                     if not _cancelled():
                         customer_set = set(customers)
-                        conn.execute(
-                            """DELETE FROM jobs WHERE prefix=? AND customer NOT IN
-                               (SELECT DISTINCT customer FROM jobs
-                                WHERE prefix=? AND customer IN ({}))""".format(
-                                ','.join('?' * len(customer_set))
-                            ),
-                            (prefix, prefix, *customer_set),
-                        ) if customer_set else conn.execute(
-                            "DELETE FROM jobs WHERE prefix=?", (prefix,)
-                        )
+                        if customer_set:
+                            placeholders = ','.join('?' * len(customer_set))
+                            conn.execute(
+                                f"DELETE FROM jobs WHERE prefix=? AND customer NOT IN ({placeholders})",
+                                (prefix, *customer_set),
+                            )
+                        else:
+                            conn.execute("DELETE FROM jobs WHERE prefix=?", (prefix,))
 
                     for customer in customers:
                         if _cancelled():
                             return
                         customer_path = os.path.join(base_dir, customer)
 
-                        # Track mtime of the directory that ACTUALLY contains job
-                        # folders (e.g. "job documents/"), not just customer_path —
-                        # adding jobs inside a subdir doesn't update customer_path mtime.
+                        # Discover jobs first so we can watch the mtime of the
+                        # directory that actually contains job folders (e.g.
+                        # "job documents/"), not just the customer root — adding
+                        # a job inside a subdir only updates the subdir mtime.
                         try:
                             jobs = app_context.find_job_folders(customer_path)
-                        except Exception as exc:
+                        except OSError as exc:
                             logger.warning("search_index: find_job_folders(%s): %s", customer_path, exc)
-                            continue  # Finding 2: skip entirely on scan failure; don't erase existing rows
+                            continue  # preserve existing rows on scan failure
 
                         container_dirs = (
                             {str(Path(p).parent) for _, p in jobs}
                             if jobs else {customer_path}
                         )
 
-                        if not any(self._is_stale(conn, d, prefix) for d in container_dirs):
+                        # Also check previously indexed container dirs — a deleted
+                        # job folder updates the container mtime even though it no
+                        # longer appears in the new jobs list.
+                        prev_containers = {
+                            row[0] for row in conn.execute(
+                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ?",
+                                (prefix, os.path.join(customer_path, '%')),
+                            )
+                        }
+                        all_containers = container_dirs | prev_containers
+
+                        if not any(self._is_stale(conn, d, prefix) for d in all_containers):
                             continue
 
                         _emit(f"Indexing {customer}…")
 
-                        # Finding 2: delete AFTER successful scan so a scan failure
-                        # doesn't leave the customer with zero indexed rows.
+                        # Delete after a successful scan so scan failure never
+                        # leaves the customer with zero indexed rows.
                         conn.execute(
                             "DELETE FROM jobs WHERE customer=? AND prefix=?",
                             (customer, prefix),
@@ -280,12 +293,12 @@ class SearchIndex:
                     except OSError:
                         completed = True  # partial walk still worth caching
 
-                    # Finding 3: only mark indexed after a complete (non-cancelled) walk
+                    # Only mark indexed after a complete non-cancelled walk.
                     if completed:
                         self._mark_indexed(conn, base_dir, prefix)
 
         except sqlite3.OperationalError as exc:
-            # Another writer holds the lock — skip this update cycle
+            # Another writer holds the lock — skip this update cycle.
             logger.warning("search_index: could not acquire write lock: %s", exc)
 
     # ------------------------------------------------------------------
@@ -293,6 +306,7 @@ class SearchIndex:
     # ------------------------------------------------------------------
 
     def is_populated(self) -> bool:
+        """Return True if the jobs table contains at least one row."""
         try:
             with self._connect(timeout=2.0) as conn:
                 row = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
@@ -308,24 +322,29 @@ class SearchIndex:
         search_desc: bool = True,
         search_drawing: bool = True,
     ) -> List[Dict]:
-        like = f'%{term}%'
+        """Search jobs table; returns up to _MAX_RESULTS results ordered by mtime."""
+        escaped = _escape_like(term)
+        like = f'%{escaped}%'
         conditions, params = [], []
         if search_customer:
-            conditions.append("customer LIKE ? COLLATE NOCASE")
+            conditions.append("customer LIKE ? ESCAPE '\\' COLLATE NOCASE")
             params.append(like)
         if search_job:
-            conditions.append("job_number LIKE ? COLLATE NOCASE")
+            conditions.append("job_number LIKE ? ESCAPE '\\' COLLATE NOCASE")
             params.append(like)
         if search_desc:
-            conditions.append("description LIKE ? COLLATE NOCASE")
+            conditions.append("description LIKE ? ESCAPE '\\' COLLATE NOCASE")
             params.append(like)
         if search_drawing:
-            conditions.append("drawings LIKE ? COLLATE NOCASE")
+            conditions.append("drawings LIKE ? ESCAPE '\\' COLLATE NOCASE")
             params.append(like)
         if not conditions:
             return []
 
-        sql = f"SELECT * FROM jobs WHERE ({' OR '.join(conditions)}) ORDER BY mtime DESC"
+        sql = (
+            f"SELECT * FROM jobs WHERE ({' OR '.join(conditions)}) "
+            f"ORDER BY mtime DESC LIMIT {_MAX_RESULTS}"
+        )
         try:
             with self._connect(timeout=5.0) as conn:
                 rows = conn.execute(sql, params).fetchall()
@@ -349,10 +368,13 @@ class SearchIndex:
         return results
 
     def search_bp(self, term: str) -> List[Dict]:
-        like = f'%{term}%'
-        sql = """SELECT * FROM bp_files
-                 WHERE filename LIKE ? COLLATE NOCASE
-                 ORDER BY mtime DESC"""
+        """Search blueprint files by filename; returns up to _MAX_RESULTS results."""
+        escaped = _escape_like(term)
+        like = f'%{escaped}%'
+        sql = (
+            f"SELECT * FROM bp_files WHERE filename LIKE ? ESCAPE '\\' COLLATE NOCASE "
+            f"ORDER BY mtime DESC LIMIT {_MAX_RESULTS}"
+        )
         try:
             with self._connect(timeout=5.0) as conn:
                 rows = conn.execute(sql, (like,)).fetchall()
@@ -376,6 +398,7 @@ class SearchIndex:
         return results
 
     def job_count(self) -> int:
+        """Return total number of indexed job rows."""
         try:
             with self._connect(timeout=2.0) as conn:
                 return conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]

@@ -353,7 +353,7 @@ class SearchModule(BaseModule):
             db_path = get_config_dir() / 'search_index.db'
             self._index = SearchIndex(db_path)
         except Exception as exc:
-            logger.warning("search: could not open index DB: %s", exc)
+            logger.warning("search: could not open index DB (%s): %s", type(exc).__name__, exc)
             self._index = None
 
     def start_indexer(self):
@@ -561,9 +561,11 @@ class SearchModule(BaseModule):
 
         include_blueprints = self.search_blueprints_check.isChecked()
 
-        # --- Use index when available regardless of mode ---
+        # Index is used for strict mode only. Legacy mode uses the filesystem walk
+        # because it has different matching semantics (recursive, rel_path matching).
         index_ready = (
-            self._index is not None
+            strict_mode
+            and self._index is not None
             and self._index.is_populated()
             and not (self._index_worker and self._index_worker.isRunning())
         )
@@ -602,11 +604,17 @@ class SearchModule(BaseModule):
     def _search_from_index(self, term, search_customer, search_job,
                            search_desc, search_drawing, include_blueprints):
         """Query the SQLite index and populate results immediately."""
-        results = self._index.search_jobs(
-            term, search_customer, search_job, search_desc, search_drawing,
-        )
-        if include_blueprints:
-            results += self._index.search_bp(term)
+        try:
+            results = self._index.search_jobs(
+                term, search_customer, search_job, search_desc, search_drawing,
+            )
+            if include_blueprints:
+                results += self._index.search_bp(term)
+        except Exception as exc:
+            logger.error("search: index query failed (%s): %s", type(exc).__name__, exc)
+            self._index = None  # disable index; next search falls back to filesystem walk
+            self.search_status_label.setText("Index error — falling back to filesystem search")
+            return
 
         results.sort(key=lambda x: x['date'], reverse=True)
         self.search_results = results
