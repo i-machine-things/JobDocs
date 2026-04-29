@@ -2348,8 +2348,13 @@ Actionable: 1  Nitpicks: 0
 
 ---
 
-## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 9
+## 2026-04-29 — `core/search_index.py` (OSError in blueprint walk must not overwrite DB)
 
-Actionable: ?  Nitpicks: 0
-- Don't treat a failed blueprint walk as a fresh index.
-- Configuration used
+**Review:** When `os.walk(customer_path)` raises `OSError`, `completed` was incorrectly set to `True`, causing partial `new_rows` to delete and replace existing `bp_files` rows and call `_mark_indexed`.
+**Result:** Fixed — `except OSError` branch now sets `completed = False`, leaving existing rows intact.
+
+### Findings
+
+1. **OSError path must not commit partial walk results**
+   - `completed = True` in `except OSError` allowed a failed walk to purge good cached data.
+   - Fix: set `completed = False` so the `if completed:` block is skipped entirely on error.

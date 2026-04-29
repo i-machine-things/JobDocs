@@ -348,7 +348,7 @@ class SearchIndex:
                             else:
                                 completed = True
                         except OSError:
-                            completed = True  # partial walk still worth caching
+                            completed = False  # skip DB write; keep existing rows intact
 
                         if completed:
                             conn.execute(
