@@ -270,43 +270,88 @@ class SearchIndex:
                 for prefix, base_dir in bp_dirs:
                     if _cancelled():
                         return
-                    if not self._is_stale(conn, base_dir, prefix):
+                    try:
+                        customers = [
+                            d for d in os.listdir(base_dir)
+                            if os.path.isdir(os.path.join(base_dir, d))
+                        ]
+                    except OSError:
                         continue
 
-                    _emit(f"Indexing {prefix} files…")
-                    conn.execute("DELETE FROM bp_files WHERE prefix=?", (prefix,))
-
-                    completed = False
-                    try:
-                        for root, _dirs, files in os.walk(base_dir):
-                            if _cancelled():
-                                break
-                            rel_path = os.path.relpath(root, base_dir)
-                            path_parts = rel_path.split(os.sep)
-                            customer = path_parts[0] if path_parts and path_parts[0] != '.' else ''
-                            for filename in files:
-                                file_path = os.path.join(root, filename)
-                                try:
-                                    mtime = os.path.getmtime(file_path)
-                                except OSError:
-                                    mtime = time.time()
-                                conn.execute(
-                                    """INSERT OR REPLACE INTO bp_files
-                                       (prefix, customer, filename, name_no_ext,
-                                        dir_path, rel_path, mtime)
-                                       VALUES(?,?,?,?,?,?,?)""",
-                                    (prefix, customer, filename,
-                                     os.path.splitext(filename)[0],
-                                     root, rel_path, mtime),
-                                )
+                    # Purge rows for customers that no longer exist on disk.
+                    if not _cancelled():
+                        customer_set = set(customers)
+                        if customer_set:
+                            placeholders = ','.join('?' * len(customer_set))
+                            conn.execute(
+                                f"DELETE FROM bp_files WHERE prefix=? AND customer NOT IN ({placeholders})",
+                                (prefix, *customer_set),
+                            )
                         else:
-                            completed = True
-                    except OSError:
-                        completed = True  # partial walk still worth caching
+                            conn.execute("DELETE FROM bp_files WHERE prefix=?", (prefix,))
 
-                    # Only mark indexed after a complete non-cancelled walk.
-                    if completed:
-                        self._mark_indexed(conn, base_dir, prefix)
+                        # Prune indexed_dirs rows for customer paths that disappeared.
+                        prev_indexed = {
+                            row[0] for row in conn.execute(
+                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ?",
+                                (prefix, os.path.join(base_dir, '%')),
+                            )
+                        }
+                        valid_paths = {os.path.join(base_dir, c) for c in customer_set}
+                        for stale_path in prev_indexed - valid_paths:
+                            conn.execute(
+                                "DELETE FROM indexed_dirs WHERE dir_path=? AND prefix=?",
+                                (stale_path, prefix),
+                            )
+
+                    for customer in customers:
+                        if _cancelled():
+                            return
+                        customer_path = os.path.join(base_dir, customer)
+
+                        if not self._is_stale(conn, customer_path, prefix):
+                            continue
+
+                        _emit(f"Indexing {prefix} files…")
+
+                        # Collect rows before touching the DB so a cancelled walk
+                        # never leaves the customer with zero indexed rows.
+                        new_rows: List[Tuple] = []
+                        completed = False
+                        try:
+                            for root, _dirs, files in os.walk(customer_path):
+                                if _cancelled():
+                                    break
+                                rel_path = os.path.relpath(root, base_dir)
+                                for filename in files:
+                                    file_path = os.path.join(root, filename)
+                                    try:
+                                        mtime = os.path.getmtime(file_path)
+                                    except OSError:
+                                        mtime = time.time()
+                                    new_rows.append((
+                                        prefix, customer, filename,
+                                        os.path.splitext(filename)[0],
+                                        root, rel_path, mtime,
+                                    ))
+                            else:
+                                completed = True
+                        except OSError:
+                            completed = True  # partial walk still worth caching
+
+                        if completed:
+                            conn.execute(
+                                "DELETE FROM bp_files WHERE prefix=? AND customer=?",
+                                (prefix, customer),
+                            )
+                            conn.executemany(
+                                """INSERT OR REPLACE INTO bp_files
+                                   (prefix, customer, filename, name_no_ext,
+                                    dir_path, rel_path, mtime)
+                                   VALUES(?,?,?,?,?,?,?)""",
+                                new_rows,
+                            )
+                            self._mark_indexed(conn, customer_path, prefix)
 
         except sqlite3.OperationalError as exc:
             # Another writer holds the lock — skip this update cycle.

@@ -2322,3 +2322,12 @@ Actionable: 2  Nitpicks: 0
 - Blueprint invalidation still only watches the root directory.
 - Cancelled blueprint rebuilds can still commit a partial prefix.
 - Configuration used
+
+### Fixed
+
+1. **Blueprint staleness tracked per customer dir** (`core/search_index.py`)
+   - Changed blueprint section to enumerate customer subdirs of `base_dir` and call `_is_stale` per customer path (mirrors jobs side). New/renamed files inside a customer subdir now correctly trigger re-indexing.
+   - Added purge of disappeared customer rows in `bp_files` and `indexed_dirs`.
+
+2. **Cancelled blueprint walk no longer commits partial data** (`core/search_index.py`)
+   - Collect all rows into `new_rows` list before touching the DB. Only DELETE + executemany + mark_indexed after `completed=True`. A cancelled walk discards `new_rows` without touching the DB, leaving existing rows intact.
