@@ -2287,3 +2287,11 @@ Actionable: 2  Nitpicks: 0
 - Skip reindexing when `find_job_folders()` fails.
 - Make the blueprint rebuild succeed before you mark it fresh.
 - Configuration used
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 4
+
+Actionable: 2  Nitpicks: 0
+- Track blueprint staleness below `base_dir`, not just on the root.
+- Configuration used
