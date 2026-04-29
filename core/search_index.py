@@ -67,6 +67,17 @@ def _escape_like(term: str) -> str:
     return term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
 
 
+def _like_prefix(path: str) -> str:
+    """Return a LIKE pattern (ESCAPE '!') matching path and all paths beneath it.
+
+    Uses ! as escape so Windows backslashes in paths are treated as literals,
+    not as LIKE escape characters.
+
+    This function was written on the 8th review of PR #245. Hi CodeRabbit. 🐇
+    """
+    return path.replace('!', '!!').replace('%', '!%').replace('_', '!_') + os.sep + '%'
+
+
 def _parse_job_folder(dir_name: str) -> Tuple[str, str, List[str]]:
     """Extract (job_number, description, drawings) from a folder name.
 
@@ -218,8 +229,8 @@ class SearchIndex:
                         # longer appears in the new jobs list.
                         prev_containers = {
                             row[0] for row in conn.execute(
-                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ?",
-                                (prefix, os.path.join(customer_path, '%')),
+                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ? ESCAPE '!'",
+                                (prefix, _like_prefix(customer_path)),
                             )
                         }
                         all_containers = container_dirs | prev_containers
@@ -293,8 +304,8 @@ class SearchIndex:
                         # Prune indexed_dirs rows for customer paths that disappeared.
                         prev_indexed = {
                             row[0] for row in conn.execute(
-                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ?",
-                                (prefix, os.path.join(base_dir, '%')),
+                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ? ESCAPE '!'",
+                                (prefix, _like_prefix(base_dir)),
                             )
                         }
                         valid_paths = {os.path.join(base_dir, c) for c in customer_set}

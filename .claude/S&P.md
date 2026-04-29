@@ -2331,3 +2331,17 @@ Actionable: 2  Nitpicks: 0
 
 2. **Cancelled blueprint walk no longer commits partial data** (`core/search_index.py`)
    - Collect all rows into `new_rows` list before touching the DB. Only DELETE + executemany + mark_indexed after `completed=True`. A cancelled walk discards `new_rows` without touching the DB, leaving existing rows intact.
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 8
+
+Actionable: 1  Nitpicks: 0
+- Escape path-based LIKE patterns in indexed_dirs queries (lines 221 and 296 used raw paths with no ESCAPE).
+- Configuration used
+
+### Fixed
+
+1. **LIKE patterns in indexed_dirs queries escaped** (`core/search_index.py`)
+   - Added `_like_prefix(path)` helper using `!` as ESCAPE char (avoids conflicting with Windows `\` path separators).
+   - Updated both `prev_containers` and `prev_indexed` queries to use `_like_prefix()` with `ESCAPE '!'`.
