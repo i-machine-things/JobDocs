@@ -2295,3 +2295,13 @@ Actionable: 2  Nitpicks: 0
 Actionable: 2  Nitpicks: 0
 - Track blueprint staleness below `base_dir`, not just on the root.
 - Configuration used
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 5
+
+Actionable: ?  Nitpicks: 0
+- Apply same LIKE wildcard escaping for blueprint search.
+- Escape LIKE wildcard characters to match filesystem fallback behavior.
+- Index path bypasses legacy-mode semantics.
+- Configuration used
