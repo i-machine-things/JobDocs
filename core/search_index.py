@@ -182,7 +182,23 @@ class SearchIndex:
                         if _cancelled():
                             return
                         customer_path = os.path.join(base_dir, customer)
-                        if not self._is_stale(conn, customer_path, prefix):
+
+                        # Call find_job_folders first so we can track the mtime of
+                        # the directories that ACTUALLY contain job folders.
+                        # Tracking customer_path alone misses changes to subdirs like
+                        # "job documents/" whose mtime changes when jobs are added.
+                        try:
+                            jobs = app_context.find_job_folders(customer_path)
+                        except Exception as exc:
+                            logger.warning("search_index: find_job_folders(%s): %s", customer_path, exc)
+                            jobs = []
+
+                        container_dirs = (
+                            {str(Path(p).parent) for _, p in jobs}
+                            if jobs else {customer_path}
+                        )
+
+                        if not any(self._is_stale(conn, d, prefix) for d in container_dirs):
                             continue
 
                         _emit(f"Indexing {customer}…")
@@ -190,12 +206,6 @@ class SearchIndex:
                             "DELETE FROM jobs WHERE customer=? AND prefix=?",
                             (customer, prefix),
                         )
-
-                        try:
-                            jobs = app_context.find_job_folders(customer_path)
-                        except Exception as exc:
-                            logger.warning("search_index: find_job_folders(%s): %s", customer_path, exc)
-                            jobs = []
 
                         for dir_name, job_docs_path in jobs:
                             if not dir_name or not dir_name[0].isdigit():
@@ -213,7 +223,8 @@ class SearchIndex:
                                  ','.join(drawings), job_docs_path, mtime),
                             )
 
-                        self._mark_indexed(conn, customer_path, prefix)
+                        for d in container_dirs:
+                            self._mark_indexed(conn, d, prefix)
 
                 # --- Blueprint / IR dirs ---
                 for prefix, base_dir in bp_dirs:
