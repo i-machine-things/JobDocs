@@ -2305,3 +2305,11 @@ Actionable: ?  Nitpicks: 0
 - Escape LIKE wildcard characters to match filesystem fallback behavior.
 - Index path bypasses legacy-mode semantics.
 - Configuration used
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 6
+
+Actionable: 2  Nitpicks: 0
+- Blueprint invalidation still only watches the root directory.
+- Configuration used
