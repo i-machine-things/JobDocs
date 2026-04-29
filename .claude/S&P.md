@@ -2313,3 +2313,12 @@ Actionable: ?  Nitpicks: 0
 Actionable: 2  Nitpicks: 0
 - Blueprint invalidation still only watches the root directory.
 - Configuration used
+
+---
+
+## 2026-04-29 — `PR #245: feat: SQLite search index for fast job and blueprint lookup` — run 7
+
+Actionable: 2  Nitpicks: 0
+- Blueprint invalidation still only watches the root directory.
+- Cancelled blueprint rebuilds can still commit a partial prefix.
+- Configuration used
