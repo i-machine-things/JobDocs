@@ -140,21 +140,36 @@ class SearchIndex:
         except OSError:
             return 0.0
 
-    def _is_stale(self, conn: sqlite3.Connection, dir_path: str, prefix: str) -> bool:
-        current = self._dir_mtime(dir_path)
+    def _subtree_mtime(self, path: str) -> float:
+        """Return the max mtime of path and all descendant directories (not files)."""
+        try:
+            result = os.path.getmtime(path)
+            for root, dirs, _ in os.walk(path):
+                for d in dirs:
+                    try:
+                        result = max(result, os.path.getmtime(os.path.join(root, d)))
+                    except OSError:
+                        pass
+            return result
+        except OSError:
+            return 0.0
+
+    def _is_stale(self, conn: sqlite3.Connection, dir_path: str, prefix: str, *, recursive: bool = False) -> bool:
+        current = self._subtree_mtime(dir_path) if recursive else self._dir_mtime(dir_path)
         row = conn.execute(
             "SELECT mtime FROM indexed_dirs WHERE dir_path=? AND prefix=?",
             (dir_path, prefix),
         ).fetchone()
         return row is None or current != row['mtime']
 
-    def _mark_indexed(self, conn: sqlite3.Connection, dir_path: str, prefix: str) -> None:
+    def _mark_indexed(self, conn: sqlite3.Connection, dir_path: str, prefix: str, *, recursive: bool = False) -> None:
+        mtime = self._subtree_mtime(dir_path) if recursive else self._dir_mtime(dir_path)
         conn.execute(
             """INSERT INTO indexed_dirs(dir_path, prefix, mtime, indexed_at)
                VALUES(?,?,?,?)
                ON CONFLICT(dir_path, prefix)
                DO UPDATE SET mtime=excluded.mtime, indexed_at=excluded.indexed_at""",
-            (dir_path, prefix, self._dir_mtime(dir_path), time.time()),
+            (dir_path, prefix, mtime, time.time()),
         )
 
     # ------------------------------------------------------------------
@@ -320,7 +335,7 @@ class SearchIndex:
                             return
                         customer_path = os.path.join(base_dir, customer)
 
-                        if not self._is_stale(conn, customer_path, prefix):
+                        if not self._is_stale(conn, customer_path, prefix, recursive=True):
                             continue
 
                         _emit(f"Indexing {prefix} files…")
@@ -329,8 +344,15 @@ class SearchIndex:
                         # never leaves the customer with zero indexed rows.
                         new_rows: List[Tuple] = []
                         completed = False
+                        walk_failed = False
+
+                        def _on_walk_error(err: OSError) -> None:
+                            nonlocal walk_failed
+                            walk_failed = True
+                            logger.warning("search_index: os.walk(%s): %s", customer_path, err)
+
                         try:
-                            for root, _dirs, files in os.walk(customer_path):
+                            for root, _dirs, files in os.walk(customer_path, onerror=_on_walk_error):
                                 if _cancelled():
                                     break
                                 rel_path = os.path.relpath(root, base_dir)
@@ -347,8 +369,11 @@ class SearchIndex:
                                     ))
                             else:
                                 completed = True
-                        except OSError:
-                            completed = False  # skip DB write; keep existing rows intact
+                        except OSError as exc:
+                            walk_failed = True
+                            logger.warning("search_index: os.walk(%s): %s", customer_path, exc)
+
+                        completed = completed and not walk_failed
 
                         if completed:
                             conn.execute(
@@ -362,7 +387,7 @@ class SearchIndex:
                                    VALUES(?,?,?,?,?,?,?)""",
                                 new_rows,
                             )
-                            self._mark_indexed(conn, customer_path, prefix)
+                            self._mark_indexed(conn, customer_path, prefix, recursive=True)
 
         except sqlite3.OperationalError as exc:
             # Another writer holds the lock — skip this update cycle.
