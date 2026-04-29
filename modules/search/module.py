@@ -561,10 +561,9 @@ class SearchModule(BaseModule):
 
         include_blueprints = self.search_blueprints_check.isChecked()
 
-        # --- Try index first (strict mode only — legacy walk finds non-standard structures) ---
+        # --- Use index when available regardless of mode ---
         index_ready = (
-            strict_mode
-            and self._index is not None
+            self._index is not None
             and self._index.is_populated()
             and not (self._index_worker and self._index_worker.isRunning())
         )
