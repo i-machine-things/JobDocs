@@ -157,6 +157,35 @@ class SearchWorker(QThread):
                         self.result_found.emit(result)
                         self.result_count += 1
 
+                # find_job_folders requires a specific subfolder (e.g. "job documents")
+                # that may not exist.  When the customer name matched but no structured
+                # jobs were returned, fall back to a plain directory scan so the customer
+                # is still reachable in strict mode.
+                if customer_match and not jobs:
+                    try:
+                        for item in sorted(os.listdir(customer_path)):
+                            if self._is_cancelled:
+                                break
+                            item_path = os.path.join(customer_path, item)
+                            if not os.path.isdir(item_path) or not item or not item[0].isdigit():
+                                continue
+                            job_num, desc, drawings = _parse_job_folder(item)
+                            try:
+                                mod_time = datetime.fromtimestamp(Path(item_path).stat().st_mtime)
+                            except OSError:
+                                mod_time = datetime.now()
+                            self.result_found.emit({
+                                'date': mod_time,
+                                'customer': display_customer,
+                                'job_number': job_num,
+                                'description': desc,
+                                'drawings': drawings,
+                                'path': item_path,
+                            })
+                            self.result_count += 1
+                    except OSError:
+                        pass
+
     def _legacy_search(self):
         """Recursive search through all directories"""
         for prefix, base_dir in self.dirs_to_search:

@@ -344,6 +344,34 @@ class SearchIndex:
                                  ','.join(drawings), job_docs_path, mtime),
                             )
 
+                        if not jobs:
+                            # find_job_folders requires a specific subfolder structure.
+                            # When none is found, scan the customer directory directly so
+                            # customers with non-standard layouts are still indexed.
+                            try:
+                                for item in os.listdir(customer_path):
+                                    if _cancelled():
+                                        break
+                                    if not item or not item[0].isdigit():
+                                        continue
+                                    item_path = os.path.join(customer_path, item)
+                                    if not os.path.isdir(item_path):
+                                        continue
+                                    job_number, desc, drawings = _parse_job_folder(item)
+                                    try:
+                                        mtime = os.path.getmtime(item_path)
+                                    except OSError:
+                                        mtime = time.time()
+                                    conn.execute(
+                                        """INSERT OR REPLACE INTO jobs
+                                           (prefix, customer, job_number, description, drawings, path, mtime)
+                                           VALUES(?,?,?,?,?,?,?)""",
+                                        (prefix, customer, job_number, desc,
+                                         ','.join(drawings), item_path, mtime),
+                                    )
+                            except OSError as exc:
+                                logger.warning("search_index: fallback scan(%s): %s", customer_path, exc)
+
                         for d in container_dirs:
                             self._mark_indexed(conn, d, prefix)
 
