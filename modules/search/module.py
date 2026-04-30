@@ -558,11 +558,14 @@ class SearchModule(BaseModule):
         )
 
         if index_ready:
-            self._search_from_index(
+            if self._search_from_index(
                 search_term, search_customer, search_job,
                 search_desc, search_drawing, include_blueprints,
-            )
-            return
+            ):
+                return
+            # Index returned 0 results — fall back to filesystem strict search.
+            # The index may not have indexed all customer directories (e.g. when
+            # the folder structure doesn't match the configured template).
 
         # --- Fallback: live filesystem walk ---
         dirs_to_search = list(customer_dirs)
@@ -589,8 +592,12 @@ class SearchModule(BaseModule):
         self._worker.start()
 
     def _search_from_index(self, term, search_customer, search_job,
-                           search_desc, search_drawing, include_blueprints):
-        """Query the SQLite index and populate results immediately."""
+                           search_desc, search_drawing, include_blueprints) -> bool:
+        """Query the SQLite index and populate results immediately.
+
+        Returns True if results were found and displayed, False if the caller
+        should fall back to a filesystem search.
+        """
         try:
             results = self._index.search_jobs(
                 term, search_customer, search_job, search_desc, search_drawing,
@@ -600,8 +607,10 @@ class SearchModule(BaseModule):
         except Exception as exc:
             logger.error("search: index query failed (%s): %s", type(exc).__name__, exc)
             self._index = None  # disable index; next search falls back to filesystem walk
-            self.search_status_label.setText("Index error — falling back to filesystem search")
-            return
+            return False
+
+        if not results:
+            return False
 
         results.sort(key=lambda x: x['date'], reverse=True)
         self.search_results = results
@@ -619,6 +628,7 @@ class SearchModule(BaseModule):
         self.search_table.blockSignals(False)
 
         self.search_status_label.setText(f"Found {len(results)} result(s)")
+        return True
 
     def cancel_search(self):
         """Cancel the running search"""
