@@ -308,6 +308,7 @@ class SearchModule(BaseModule):
         self._worker = None       # Background search worker
         self._index_worker = None # Background index builder
         self._index: Optional[SearchIndex] = None
+        self._index_failures = 0  # consecutive query errors
 
         # Widget references
         self.search_edit = None
@@ -605,9 +606,16 @@ class SearchModule(BaseModule):
             if include_blueprints:
                 results += self._index.search_bp(term)
         except Exception as exc:
-            logger.error("search: index query failed (%s): %s", type(exc).__name__, exc)
-            self._index = None  # disable index; next search falls back to filesystem walk
+            self._index_failures += 1
+            logger.error(
+                "search: index query failed (%s): %s (failure %d/3)",
+                type(exc).__name__, exc, self._index_failures,
+            )
+            if self._index_failures >= 3:
+                self._index = None  # disable index after repeated failures
             return False
+
+        self._index_failures = 0
 
         if not results:
             return False
