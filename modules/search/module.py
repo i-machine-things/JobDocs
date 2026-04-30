@@ -557,9 +557,20 @@ class SearchModule(BaseModule):
         self.search_results.clear()
 
         strict_mode = self.search_strict_radio.isChecked()
+        include_blueprints = self.search_blueprints_check.isChecked()
 
         customer_dirs = self._get_customer_files_dirs()
-        if not customer_dirs:
+
+        # Build blueprint dirs before the customer_dirs guard so a
+        # blueprint-only install (no customer files dir) can still search.
+        bp_dirs = []
+        if include_blueprints:
+            for key, bp_prefix in [('blueprints_dir', 'BP'), ('itar_blueprints_dir', 'ITAR-BP')]:
+                d = self.app_context.get_setting(key, '')
+                if d and os.path.exists(d):
+                    bp_dirs.append((bp_prefix, d))
+
+        if not customer_dirs and not bp_dirs:
             cf_dir = self.app_context.get_setting('customer_files_dir', '')
             itar_cf_dir = self.app_context.get_setting('itar_customer_files_dir', '')
             if not cf_dir and not itar_cf_dir:
@@ -575,8 +586,6 @@ class SearchModule(BaseModule):
             search_drawing = self.search_drawing_check.isChecked()
         else:
             search_customer = search_job = search_desc = search_drawing = True
-
-        include_blueprints = self.search_blueprints_check.isChecked()
 
         # Index is used for strict mode only. Legacy mode uses the filesystem walk
         # because it has different matching semantics (recursive, rel_path matching).
@@ -598,12 +607,7 @@ class SearchModule(BaseModule):
             # the folder structure doesn't match the configured template).
 
         # --- Fallback: live filesystem walk ---
-        dirs_to_search = list(customer_dirs)
-        if include_blueprints:
-            for key, prefix in [('blueprints_dir', 'BP'), ('itar_blueprints_dir', 'ITAR-BP')]:
-                d = self.app_context.get_setting(key, '')
-                if d and os.path.exists(d):
-                    dirs_to_search.append((prefix, d))
+        dirs_to_search = list(customer_dirs) + bp_dirs
 
         self.search_progress.setMaximum(0)
         self.search_progress.show()

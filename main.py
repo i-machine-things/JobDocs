@@ -36,6 +36,7 @@ from shared.remote_sync import RemoteSyncManager
 
 
 def _get_app_version() -> str:
+    
     try:
         from core._version import __version__ as _v
         if _v and _v != "dev":

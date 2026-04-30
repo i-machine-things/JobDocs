@@ -290,10 +290,20 @@ class SearchIndex:
                             return
                         customer_path = os.path.join(base_dir, customer)
 
-                        # Discover jobs first so we can watch the mtime of the
-                        # directory that actually contains job folders (e.g.
-                        # "job documents/"), not just the customer root — adding
-                        # a job inside a subdir only updates the subdir mtime.
+                        # Cheap precheck using previously indexed container dirs
+                        # before calling the expensive find_job_folders.
+                        prev_containers = {
+                            row[0] for row in conn.execute(
+                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ? ESCAPE '!'",
+                                (prefix, _like_prefix(customer_path)),
+                            )
+                        }
+                        if not any(self._is_stale(conn, d, prefix) for d in prev_containers | {customer_path}):
+                            continue
+
+                        # Discover jobs to get the actual container dirs (the subdirs
+                        # that hold job folders). Checking these — not just the customer
+                        # root — detects new/deleted jobs inside existing subdirs.
                         try:
                             jobs = app_context.find_job_folders(customer_path)
                         except OSError as exc:
@@ -304,16 +314,6 @@ class SearchIndex:
                             {str(Path(p).parent) for _, p in jobs}
                             if jobs else {customer_path}
                         )
-
-                        # Also check previously indexed container dirs — a deleted
-                        # job folder updates the container mtime even though it no
-                        # longer appears in the new jobs list.
-                        prev_containers = {
-                            row[0] for row in conn.execute(
-                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ? ESCAPE '!'",
-                                (prefix, _like_prefix(customer_path)),
-                            )
-                        }
                         all_containers = container_dirs | prev_containers
 
                         if not any(self._is_stale(conn, d, prefix) for d in all_containers):
@@ -321,12 +321,10 @@ class SearchIndex:
 
                         _emit(f"Indexing {customer}…")
 
-                        # Delete after a successful scan so scan failure never
-                        # leaves the customer with zero indexed rows.
-                        conn.execute(
-                            "DELETE FROM jobs WHERE customer=? AND prefix=?",
-                            (customer, prefix),
-                        )
+                        # Accumulate new rows before touching the DB so a cancelled
+                        # fallback scan never leaves the customer with zero rows.
+                        new_job_rows = []
+                        scan_cancelled = False
 
                         for dir_name, job_docs_path in jobs:
                             if not dir_name or not dir_name[0].isdigit():
@@ -336,13 +334,10 @@ class SearchIndex:
                                 mtime = os.path.getmtime(job_docs_path)
                             except OSError:
                                 mtime = time.time()
-                            conn.execute(
-                                """INSERT OR REPLACE INTO jobs
-                                   (prefix, customer, job_number, description, drawings, path, mtime)
-                                   VALUES(?,?,?,?,?,?,?)""",
-                                (prefix, customer, job_number, desc,
-                                 ','.join(drawings), job_docs_path, mtime),
-                            )
+                            new_job_rows.append((
+                                prefix, customer, job_number, desc,
+                                ','.join(drawings), job_docs_path, mtime,
+                            ))
 
                         if not jobs:
                             # find_job_folders requires a specific subfolder structure.
@@ -351,6 +346,7 @@ class SearchIndex:
                             try:
                                 for item in os.listdir(customer_path):
                                     if _cancelled():
+                                        scan_cancelled = True
                                         break
                                     if not item or not item[0].isdigit():
                                         continue
@@ -362,29 +358,37 @@ class SearchIndex:
                                         mtime = os.path.getmtime(item_path)
                                     except OSError:
                                         mtime = time.time()
-                                    conn.execute(
-                                        """INSERT OR REPLACE INTO jobs
-                                           (prefix, customer, job_number, description, drawings, path, mtime)
-                                           VALUES(?,?,?,?,?,?,?)""",
-                                        (prefix, customer, job_number, desc,
-                                         ','.join(drawings), item_path, mtime),
-                                    )
+                                    new_job_rows.append((
+                                        prefix, customer, job_number, desc,
+                                        ','.join(drawings), item_path, mtime,
+                                    ))
                             except OSError as exc:
                                 logger.warning("search_index: fallback scan(%s): %s", customer_path, exc)
 
-                        for d in container_dirs:
-                            self._mark_indexed(conn, d, prefix)
-
-                        # Prune indexed_dirs rows for containers that no longer
-                        # exist (deleted job folders). Without this, _is_stale()
-                        # returns True for the missing path forever and the
-                        # customer is re-indexed on every launch.
-                        stale_containers = prev_containers - container_dirs
-                        for d in stale_containers:
+                        if not scan_cancelled:
                             conn.execute(
-                                "DELETE FROM indexed_dirs WHERE dir_path=? AND prefix=?",
-                                (d, prefix),
+                                "DELETE FROM jobs WHERE customer=? AND prefix=?",
+                                (customer, prefix),
                             )
+                            conn.executemany(
+                                """INSERT OR REPLACE INTO jobs
+                                   (prefix, customer, job_number, description, drawings, path, mtime)
+                                   VALUES(?,?,?,?,?,?,?)""",
+                                new_job_rows,
+                            )
+                            for d in container_dirs:
+                                self._mark_indexed(conn, d, prefix)
+
+                            # Prune indexed_dirs rows for containers that no longer
+                            # exist (deleted job folders). Without this, _is_stale()
+                            # returns True for the missing path forever and the
+                            # customer is re-indexed on every launch.
+                            stale_containers = prev_containers - container_dirs
+                            for d in stale_containers:
+                                conn.execute(
+                                    "DELETE FROM indexed_dirs WHERE dir_path=? AND prefix=?",
+                                    (d, prefix),
+                                )
 
                 # --- Blueprint / IR dirs ---
                 for prefix, base_dir in bp_dirs:
@@ -484,8 +488,12 @@ class SearchIndex:
                             self._mark_indexed(conn, customer_path, prefix, recursive=True)
 
         except sqlite3.OperationalError as exc:
-            # Another writer holds the lock — skip this update cycle.
-            logger.warning("search_index: could not acquire write lock: %s", exc)
+            if "database is locked" in str(exc).lower():
+                # Another writer holds the lock — skip this update cycle.
+                logger.warning("search_index: could not acquire write lock: %s", exc)
+            else:
+                logger.error("search_index: operational error during update: %s", exc)
+                raise
 
     # ------------------------------------------------------------------
     # Querying
@@ -534,12 +542,8 @@ class SearchIndex:
             f"SELECT * FROM jobs WHERE ({' OR '.join(conditions)}) "
             f"ORDER BY mtime DESC LIMIT {_MAX_RESULTS}"
         )
-        try:
-            with self._connect(timeout=5.0) as conn:
-                rows = conn.execute(sql, params).fetchall()
-        except sqlite3.Error as exc:
-            logger.error("search_index: search_jobs failed: %s", exc)
-            return []
+        with self._connect(timeout=5.0) as conn:
+            rows = conn.execute(sql, params).fetchall()
 
         results = []
         for row in rows:
@@ -564,12 +568,8 @@ class SearchIndex:
             f"SELECT * FROM bp_files WHERE filename LIKE ? ESCAPE '\\' COLLATE NOCASE "
             f"ORDER BY mtime DESC LIMIT {_MAX_RESULTS}"
         )
-        try:
-            with self._connect(timeout=5.0) as conn:
-                rows = conn.execute(sql, (like,)).fetchall()
-        except sqlite3.Error as exc:
-            logger.error("search_index: search_bp failed: %s", exc)
-            return []
+        with self._connect(timeout=5.0) as conn:
+            rows = conn.execute(sql, (like,)).fetchall()
 
         results = []
         for row in rows:
