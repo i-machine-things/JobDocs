@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     drawings    TEXT    NOT NULL DEFAULT '',
     path        TEXT    NOT NULL,
     mtime       REAL    NOT NULL,
-    UNIQUE(path)
+    UNIQUE(prefix, path)
 );
 
 CREATE TABLE IF NOT EXISTS bp_files (
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS bp_files (
     dir_path    TEXT    NOT NULL,
     rel_path    TEXT    NOT NULL,
     mtime       REAL    NOT NULL,
-    UNIQUE(dir_path, filename)
+    UNIQUE(prefix, dir_path, filename)
 );
 
 CREATE TABLE IF NOT EXISTS indexed_dirs (
@@ -57,6 +57,54 @@ CREATE INDEX IF NOT EXISTS idx_jobs_draw        ON jobs(drawings    COLLATE NOCA
 CREATE INDEX IF NOT EXISTS idx_jobs_cust_prefix ON jobs(customer, prefix);
 CREATE INDEX IF NOT EXISTS idx_bp_filename      ON bp_files(filename COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_bp_cust          ON bp_files(customer COLLATE NOCASE);
+"""
+
+_MIGRATION_V1 = """
+BEGIN;
+CREATE TABLE jobs_v1 (
+    id          INTEGER PRIMARY KEY,
+    prefix      TEXT    NOT NULL DEFAULT '',
+    customer    TEXT    NOT NULL,
+    job_number  TEXT    NOT NULL DEFAULT '',
+    description TEXT    NOT NULL DEFAULT '',
+    drawings    TEXT    NOT NULL DEFAULT '',
+    path        TEXT    NOT NULL,
+    mtime       REAL    NOT NULL,
+    UNIQUE(prefix, path)
+);
+INSERT OR IGNORE INTO jobs_v1
+    SELECT id, prefix, customer, job_number, description, drawings, path, mtime
+    FROM jobs;
+DROP TABLE jobs;
+ALTER TABLE jobs_v1 RENAME TO jobs;
+
+CREATE TABLE bp_files_v1 (
+    id          INTEGER PRIMARY KEY,
+    prefix      TEXT    NOT NULL,
+    customer    TEXT    NOT NULL,
+    filename    TEXT    NOT NULL,
+    name_no_ext TEXT    NOT NULL,
+    dir_path    TEXT    NOT NULL,
+    rel_path    TEXT    NOT NULL,
+    mtime       REAL    NOT NULL,
+    UNIQUE(prefix, dir_path, filename)
+);
+INSERT OR IGNORE INTO bp_files_v1
+    SELECT id, prefix, customer, filename, name_no_ext, dir_path, rel_path, mtime
+    FROM bp_files;
+DROP TABLE bp_files;
+ALTER TABLE bp_files_v1 RENAME TO bp_files;
+
+CREATE INDEX IF NOT EXISTS idx_jobs_number      ON jobs(job_number  COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_cust        ON jobs(customer    COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_desc        ON jobs(description COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_draw        ON jobs(drawings    COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_jobs_cust_prefix ON jobs(customer, prefix);
+CREATE INDEX IF NOT EXISTS idx_bp_filename      ON bp_files(filename COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_bp_cust          ON bp_files(customer COLLATE NOCASE);
+
+PRAGMA user_version = 1;
+COMMIT;
 """
 
 _MAX_RESULTS = 500
@@ -131,8 +179,22 @@ class SearchIndex:
         try:
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
+                self._migrate(conn)
         except sqlite3.Error as exc:
             logger.error("search_index: failed to initialise DB: %s", exc)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version >= 1:
+            return
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'"
+        ).fetchone()
+        if row and 'UNIQUE(path)' in (row[0] or ''):
+            logger.info("search_index: migrating schema to v1 (prefix-aware UNIQUE constraints)")
+            conn.executescript(_MIGRATION_V1)
+        else:
+            conn.execute("PRAGMA user_version = 1")
 
     def _dir_mtime(self, path: str) -> float:
         try:
@@ -398,11 +460,12 @@ class SearchIndex:
     # ------------------------------------------------------------------
 
     def is_populated(self) -> bool:
-        """Return True if the jobs table contains at least one row."""
+        """Return True if the index contains at least one job or blueprint file."""
         try:
             with self._connect(timeout=2.0) as conn:
-                row = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
-                return row[0] > 0
+                if conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] > 0:
+                    return True
+                return conn.execute("SELECT COUNT(*) FROM bp_files").fetchone()[0] > 0
         except sqlite3.Error:
             return False
 
