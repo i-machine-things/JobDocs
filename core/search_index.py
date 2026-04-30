@@ -111,7 +111,11 @@ _MAX_RESULTS = 500
 
 
 def _escape_like(term: str) -> str:
-    """Escape SQL LIKE special characters so literal underscores and percent signs match."""
+    """Escape SQL LIKE special characters so literal underscores and percent signs match.
+
+    Uses backslash as the escape character — pair with ESCAPE '\\' in SQL.
+    (_like_prefix uses '!' instead so Windows backslashes in paths are treated as literals.)
+    """
     return term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
 
 
@@ -463,9 +467,11 @@ class SearchIndex:
         """Return True if the index contains at least one job or blueprint file."""
         try:
             with self._connect(timeout=2.0) as conn:
-                if conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] > 0:
-                    return True
-                return conn.execute("SELECT COUNT(*) FROM bp_files").fetchone()[0] > 0
+                row = conn.execute(
+                    "SELECT EXISTS(SELECT 1 FROM jobs LIMIT 1)"
+                    " OR EXISTS(SELECT 1 FROM bp_files LIMIT 1)"
+                ).fetchone()
+                return bool(row[0])
         except sqlite3.Error:
             return False
 
