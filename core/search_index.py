@@ -311,12 +311,33 @@ class SearchIndex:
         def _cancelled() -> bool:
             return bool(cancelled and cancelled())
 
+        # Duplicate prefixes within cf_dirs or bp_dirs would cause DELETE
+        # statements scoped by prefix to silently wipe rows from the other root.
+        cf_prefixes_seen: set = set()
+        for prefix, _ in cf_dirs:
+            if prefix in cf_prefixes_seen:
+                logger.error(
+                    "search_index: duplicate cf prefix %r in cf_dirs — aborting update to prevent data loss",
+                    prefix,
+                )
+                return
+            cf_prefixes_seen.add(prefix)
+        bp_prefixes_seen: set = set()
+        for prefix, _ in bp_dirs:
+            if prefix in bp_prefixes_seen:
+                logger.error(
+                    "search_index: duplicate bp prefix %r in bp_dirs — aborting update to prevent data loss",
+                    prefix,
+                )
+                return
+            bp_prefixes_seen.add(prefix)
+
         try:
             with closing(self._connect()) as conn, conn:
                 # Purge rows for prefixes that are no longer in config so stale
                 # data from removed directories does not persist indefinitely.
-                all_cf_prefixes = {p for p, _ in cf_dirs}
-                all_bp_prefixes = {p for p, _ in bp_dirs}
+                all_cf_prefixes = cf_prefixes_seen
+                all_bp_prefixes = bp_prefixes_seen
 
                 if all_cf_prefixes:
                     _ph = ','.join('?' * len(all_cf_prefixes))
