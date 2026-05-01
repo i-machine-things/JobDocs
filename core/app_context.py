@@ -236,7 +236,7 @@ class AppContext:
 
         return Path(base_dir) / path_str
 
-    def find_job_folders(self, customer_path: str) -> List[Tuple[str, str]]:
+    def find_job_folders(self, customer_path: str, *, errors: Optional[List[OSError]] = None) -> List[Tuple[str, str]]:
         """
         Find all job folders in a customer directory.
 
@@ -263,6 +263,8 @@ class AppContext:
                             jobs.append((item, expected_docs_path))
             except OSError as e:
                 logger.debug("find_job_folders: OSError %s", e)
+                if errors is not None:
+                    errors.append(e)
         else:
             parts = after_customer.split('{job_folder}')
             if len(parts) == 2:
@@ -294,6 +296,8 @@ class AppContext:
                                             jobs.append((item, item_path))
                         except OSError as e:
                             logger.debug("find_job_folders: OSError enumerating PO dirs: %s", e)
+                            if errors is not None:
+                                errors.append(e)
                 else:
                     prefix_path = os.path.join(customer_path, prefix) if prefix else customer_path
                     if os.path.exists(prefix_path):
@@ -309,6 +313,8 @@ class AppContext:
                                         jobs.append((item, item_path))
                         except OSError as e:
                             logger.debug("find_job_folders: OSError: %s", e)
+                            if errors is not None:
+                                errors.append(e)
 
         logger.debug("find_job_folders: returning %d jobs from %s", len(jobs), customer_path)
         return jobs

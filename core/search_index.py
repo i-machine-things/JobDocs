@@ -337,16 +337,34 @@ class SearchIndex:
                         # Discover jobs to get the actual container dirs (the subdirs
                         # that hold job folders). Checking these — not just the customer
                         # root — detects new/deleted jobs inside existing subdirs.
+                        scan_errors: List[Exception] = []
                         try:
-                            jobs = app_context.find_job_folders(customer_path)
+                            jobs = app_context.find_job_folders(customer_path, errors=scan_errors)
                         except OSError as exc:
                             logger.warning("search_index: find_job_folders(%s): %s", customer_path, exc)
                             continue  # preserve existing rows on scan failure
+                        if scan_errors:
+                            logger.warning(
+                                "search_index: find_job_folders(%s) partial scan (%d error(s)); preserving existing rows",
+                                customer_path, len(scan_errors),
+                            )
+                            continue
 
-                        container_dirs = (
-                            {str(Path(p).parent) for _, p in jobs}
-                            if jobs else {customer_path}
-                        )
+                        # Include all ancestor dirs between customer_path (exclusive)
+                        # and each job_docs_path (exclusive) so PO-level dirs are
+                        # tracked in indexed_dirs. Without this, adding a job to an
+                        # existing PO subdir only updates the PO dir mtime — which
+                        # is never in prev_containers — and the precheck skips it.
+                        if jobs:
+                            customer_p = Path(customer_path)
+                            container_dirs: set = set()
+                            for _, job_docs_path in jobs:
+                                for p in Path(job_docs_path).parents:
+                                    if p == customer_p:
+                                        break
+                                    container_dirs.add(str(p))
+                        else:
+                            container_dirs = {customer_path}
                         all_containers = container_dirs | prev_containers
 
                         if not any(self._is_stale(conn, d, prefix) for d in all_containers):
