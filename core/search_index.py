@@ -46,9 +46,10 @@ CREATE TABLE IF NOT EXISTS bp_files (
 CREATE TABLE IF NOT EXISTS indexed_dirs (
     dir_path    TEXT    NOT NULL,
     prefix      TEXT    NOT NULL DEFAULT '',
+    kind        TEXT    NOT NULL DEFAULT '',
     mtime       REAL    NOT NULL,
     indexed_at  REAL    NOT NULL,
-    PRIMARY KEY (dir_path, prefix)
+    PRIMARY KEY (dir_path, prefix, kind)
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_number      ON jobs(job_number  COLLATE NOCASE);
@@ -105,6 +106,21 @@ CREATE INDEX IF NOT EXISTS idx_bp_filename      ON bp_files(filename COLLATE NOC
 CREATE INDEX IF NOT EXISTS idx_bp_cust          ON bp_files(customer COLLATE NOCASE);
 
 PRAGMA user_version = 1;
+COMMIT;
+"""
+
+_MIGRATION_V2 = """
+BEGIN;
+DROP TABLE IF EXISTS indexed_dirs;
+CREATE TABLE indexed_dirs (
+    dir_path    TEXT    NOT NULL,
+    prefix      TEXT    NOT NULL DEFAULT '',
+    kind        TEXT    NOT NULL DEFAULT '',
+    mtime       REAL    NOT NULL,
+    indexed_at  REAL    NOT NULL,
+    PRIMARY KEY (dir_path, prefix, kind)
+);
+PRAGMA user_version = 2;
 COMMIT;
 """
 
@@ -192,16 +208,19 @@ class SearchIndex:
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version >= 1:
+        if version >= 2:
             return
-        row = conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'"
-        ).fetchone()
-        if row and 'UNIQUE(path)' in (row[0] or ''):
-            logger.info("search_index: migrating schema to v1 (prefix-aware UNIQUE constraints)")
-            conn.executescript(_MIGRATION_V1)
-        else:
-            conn.execute("PRAGMA user_version = 1")
+        if version < 1:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'"
+            ).fetchone()
+            if row and 'UNIQUE(path)' in (row[0] or ''):
+                logger.info("search_index: migrating schema to v1 (prefix-aware UNIQUE constraints)")
+                conn.executescript(_MIGRATION_V1)
+            else:
+                conn.execute("PRAGMA user_version = 1")
+        logger.info("search_index: migrating schema to v2 (kind-aware indexed_dirs)")
+        conn.executescript(_MIGRATION_V2)
 
     def _dir_mtime(self, path: str) -> float:
         try:
@@ -223,23 +242,23 @@ class SearchIndex:
         except OSError:
             return 0.0
 
-    def _is_stale(self, conn: sqlite3.Connection, dir_path: str, prefix: str, *, recursive: bool = False) -> bool:
+    def _is_stale(self, conn: sqlite3.Connection, dir_path: str, prefix: str, kind: str, *, recursive: bool = False) -> bool:
         if recursive:
-            return self._is_stale_recursive(conn, dir_path, prefix)
+            return self._is_stale_recursive(conn, dir_path, prefix, kind)
         current = self._dir_mtime(dir_path)
         row = conn.execute(
-            "SELECT mtime FROM indexed_dirs WHERE dir_path=? AND prefix=?",
-            (dir_path, prefix),
+            "SELECT mtime FROM indexed_dirs WHERE dir_path=? AND prefix=? AND kind=?",
+            (dir_path, prefix, kind),
         ).fetchone()
         return row is None or current != row['mtime']
 
-    def _is_stale_recursive(self, conn: sqlite3.Connection, dir_path: str, prefix: str) -> bool:
+    def _is_stale_recursive(self, conn: sqlite3.Connection, dir_path: str, prefix: str, kind: str) -> bool:
         """Walk the subtree and short-circuit on the first directory modified after
         indexed_at.  Avoids computing a global max-mtime on every launch.
         """
         row = conn.execute(
-            "SELECT indexed_at FROM indexed_dirs WHERE dir_path=? AND prefix=?",
-            (dir_path, prefix),
+            "SELECT indexed_at FROM indexed_dirs WHERE dir_path=? AND prefix=? AND kind=?",
+            (dir_path, prefix, kind),
         ).fetchone()
         if row is None:
             return True
@@ -258,17 +277,17 @@ class SearchIndex:
         except OSError:
             return True
 
-    def _mark_indexed(self, conn: sqlite3.Connection, dir_path: str, prefix: str, *, recursive: bool = False) -> None:
+    def _mark_indexed(self, conn: sqlite3.Connection, dir_path: str, prefix: str, kind: str, *, recursive: bool = False) -> None:
         # For recursive dirs, store wall-clock time as mtime so the _is_stale
         # non-recursive path still has a sensible value if the same row is ever
         # reused.  _is_stale_recursive uses indexed_at directly, not mtime.
         mtime = time.time() if recursive else self._dir_mtime(dir_path)
         conn.execute(
-            """INSERT INTO indexed_dirs(dir_path, prefix, mtime, indexed_at)
-               VALUES(?,?,?,?)
-               ON CONFLICT(dir_path, prefix)
+            """INSERT INTO indexed_dirs(dir_path, prefix, kind, mtime, indexed_at)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(dir_path, prefix, kind)
                DO UPDATE SET mtime=excluded.mtime, indexed_at=excluded.indexed_at""",
-            (dir_path, prefix, mtime, time.time()),
+            (dir_path, prefix, kind, mtime, time.time()),
         )
 
     # ------------------------------------------------------------------
@@ -294,6 +313,27 @@ class SearchIndex:
 
         try:
             with closing(self._connect()) as conn, conn:
+                # Purge rows for prefixes that are no longer in config so stale
+                # data from removed directories does not persist indefinitely.
+                all_cf_prefixes = {p for p, _ in cf_dirs}
+                all_bp_prefixes = {p for p, _ in bp_dirs}
+
+                if all_cf_prefixes:
+                    _ph = ','.join('?' * len(all_cf_prefixes))
+                    conn.execute(f"DELETE FROM jobs WHERE prefix NOT IN ({_ph})", tuple(all_cf_prefixes))
+                    conn.execute(f"DELETE FROM indexed_dirs WHERE kind='cf' AND prefix NOT IN ({_ph})", tuple(all_cf_prefixes))
+                else:
+                    conn.execute("DELETE FROM jobs")
+                    conn.execute("DELETE FROM indexed_dirs WHERE kind='cf'")
+
+                if all_bp_prefixes:
+                    _ph = ','.join('?' * len(all_bp_prefixes))
+                    conn.execute(f"DELETE FROM bp_files WHERE prefix NOT IN ({_ph})", tuple(all_bp_prefixes))
+                    conn.execute(f"DELETE FROM indexed_dirs WHERE kind='bp' AND prefix NOT IN ({_ph})", tuple(all_bp_prefixes))
+                else:
+                    conn.execute("DELETE FROM bp_files")
+                    conn.execute("DELETE FROM indexed_dirs WHERE kind='bp'")
+
                 # --- Customer files dirs ---
                 for prefix, base_dir in cf_dirs:
                     if _cancelled():
@@ -327,11 +367,11 @@ class SearchIndex:
                         # before calling the expensive find_job_folders.
                         prev_containers = {
                             row[0] for row in conn.execute(
-                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ? ESCAPE '!'",
-                                (prefix, _like_prefix(customer_path)),
+                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND kind=? AND dir_path LIKE ? ESCAPE '!'",
+                                (prefix, 'cf', _like_prefix(customer_path)),
                             )
                         }
-                        if not any(self._is_stale(conn, d, prefix) for d in prev_containers | {customer_path}):
+                        if not any(self._is_stale(conn, d, prefix, 'cf') for d in prev_containers | {customer_path}):
                             continue
 
                         # Discover jobs to get the actual container dirs (the subdirs
@@ -364,7 +404,7 @@ class SearchIndex:
                                 container_dirs.add(str(p))
                         all_containers = container_dirs | prev_containers
 
-                        if not any(self._is_stale(conn, d, prefix) for d in all_containers):
+                        if not any(self._is_stale(conn, d, prefix, 'cf') for d in all_containers):
                             continue
 
                         _emit(f"Indexing {customer}…")
@@ -427,7 +467,7 @@ class SearchIndex:
                                 new_job_rows,
                             )
                             for d in container_dirs:
-                                self._mark_indexed(conn, d, prefix)
+                                self._mark_indexed(conn, d, prefix, 'cf')
 
                             # Prune indexed_dirs rows for containers that no longer
                             # exist (deleted job folders). Without this, _is_stale()
@@ -436,8 +476,8 @@ class SearchIndex:
                             stale_containers = prev_containers - container_dirs
                             for d in stale_containers:
                                 conn.execute(
-                                    "DELETE FROM indexed_dirs WHERE dir_path=? AND prefix=?",
-                                    (d, prefix),
+                                    "DELETE FROM indexed_dirs WHERE dir_path=? AND prefix=? AND kind=?",
+                                    (d, prefix, 'cf'),
                                 )
 
                 # --- Blueprint / IR dirs ---
@@ -467,15 +507,15 @@ class SearchIndex:
                         # Prune indexed_dirs rows for customer paths that disappeared.
                         prev_indexed = {
                             row[0] for row in conn.execute(
-                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND dir_path LIKE ? ESCAPE '!'",
-                                (prefix, _like_prefix(base_dir)),
+                                "SELECT dir_path FROM indexed_dirs WHERE prefix=? AND kind=? AND dir_path LIKE ? ESCAPE '!'",
+                                (prefix, 'bp', _like_prefix(base_dir)),
                             )
                         }
                         valid_paths = {os.path.join(base_dir, c) for c in customer_set}
                         for stale_path in prev_indexed - valid_paths:
                             conn.execute(
-                                "DELETE FROM indexed_dirs WHERE dir_path=? AND prefix=?",
-                                (stale_path, prefix),
+                                "DELETE FROM indexed_dirs WHERE dir_path=? AND prefix=? AND kind=?",
+                                (stale_path, prefix, 'bp'),
                             )
 
                     for customer in customers:
@@ -483,7 +523,7 @@ class SearchIndex:
                             return
                         customer_path = os.path.join(base_dir, customer)
 
-                        if not self._is_stale(conn, customer_path, prefix, recursive=True):
+                        if not self._is_stale(conn, customer_path, prefix, 'bp', recursive=True):
                             continue
 
                         _emit(f"Indexing {prefix} files…")
@@ -535,7 +575,7 @@ class SearchIndex:
                                    VALUES(?,?,?,?,?,?,?)""",
                                 new_rows,
                             )
-                            self._mark_indexed(conn, customer_path, prefix, recursive=True)
+                            self._mark_indexed(conn, customer_path, prefix, 'bp', recursive=True)
 
         except sqlite3.OperationalError as exc:
             if "database is locked" in str(exc).lower():
