@@ -422,7 +422,7 @@ class SearchIndex:
                             try:
                                 mtime = os.path.getmtime(job_docs_path)
                             except OSError:
-                                mtime = time.time()
+                                continue
                             new_job_rows.append((
                                 prefix, customer, job_number, desc,
                                 ','.join(drawings), job_docs_path, mtime,
@@ -446,7 +446,7 @@ class SearchIndex:
                                     try:
                                         mtime = os.path.getmtime(item_path)
                                     except OSError:
-                                        mtime = time.time()
+                                        continue
                                     new_job_rows.append((
                                         prefix, customer, job_number, desc,
                                         ','.join(drawings), item_path, mtime,
@@ -549,7 +549,7 @@ class SearchIndex:
                                     try:
                                         mtime = os.path.getmtime(file_path)
                                     except OSError:
-                                        mtime = time.time()
+                                        continue
                                     new_rows.append((
                                         prefix, customer, filename,
                                         os.path.splitext(filename)[0],
