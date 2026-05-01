@@ -350,21 +350,18 @@ class SearchIndex:
                             )
                             continue
 
-                        # Include all ancestor dirs between customer_path (exclusive)
-                        # and each job_docs_path (exclusive) so PO-level dirs are
-                        # tracked in indexed_dirs. Without this, adding a job to an
-                        # existing PO subdir only updates the PO dir mtime — which
-                        # is never in prev_containers — and the precheck skips it.
-                        if jobs:
-                            customer_p = Path(customer_path)
-                            container_dirs: set = set()
-                            for _, job_docs_path in jobs:
-                                for p in Path(job_docs_path).parents:
-                                    if p == customer_p:
-                                        break
-                                    container_dirs.add(str(p))
-                        else:
-                            container_dirs = {customer_path}
+                        # Track customer_path itself plus all ancestor dirs between
+                        # it and each job_docs_path so PO-level dirs are recorded
+                        # in indexed_dirs. customer_path must be included so the
+                        # precheck can confirm it was indexed and avoid calling
+                        # find_job_folders every run.
+                        customer_p = Path(customer_path)
+                        container_dirs: set = {customer_path}
+                        for _, job_docs_path in jobs:
+                            for p in Path(job_docs_path).parents:
+                                if p == customer_p:
+                                    break
+                                container_dirs.add(str(p))
                         all_containers = container_dirs | prev_containers
 
                         if not any(self._is_stale(conn, d, prefix) for d in all_containers):
