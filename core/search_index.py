@@ -11,6 +11,7 @@ import os
 import re
 import sqlite3
 import time
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -181,9 +182,10 @@ class SearchIndex:
 
     def _init_db(self) -> None:
         try:
-            with self._connect() as conn:
-                conn.executescript(_SCHEMA)
-                self._migrate(conn)
+            with closing(self._connect()) as conn:
+                with conn:
+                    conn.executescript(_SCHEMA)
+                    self._migrate(conn)
         except sqlite3.Error as exc:
             logger.error("search_index: failed to initialise DB: %s", exc)
 
@@ -221,15 +223,45 @@ class SearchIndex:
             return 0.0
 
     def _is_stale(self, conn: sqlite3.Connection, dir_path: str, prefix: str, *, recursive: bool = False) -> bool:
-        current = self._subtree_mtime(dir_path) if recursive else self._dir_mtime(dir_path)
+        if recursive:
+            return self._is_stale_recursive(conn, dir_path, prefix)
+        current = self._dir_mtime(dir_path)
         row = conn.execute(
             "SELECT mtime FROM indexed_dirs WHERE dir_path=? AND prefix=?",
             (dir_path, prefix),
         ).fetchone()
         return row is None or current != row['mtime']
 
+    def _is_stale_recursive(self, conn: sqlite3.Connection, dir_path: str, prefix: str) -> bool:
+        """Walk the subtree and short-circuit on the first directory modified after
+        indexed_at.  Avoids computing a global max-mtime on every launch.
+        """
+        row = conn.execute(
+            "SELECT indexed_at FROM indexed_dirs WHERE dir_path=? AND prefix=?",
+            (dir_path, prefix),
+        ).fetchone()
+        if row is None:
+            return True
+        indexed_at: float = row['indexed_at']
+        try:
+            if os.path.getmtime(dir_path) > indexed_at:
+                return True
+            for root, dirs, _ in os.walk(dir_path):
+                for d in dirs:
+                    try:
+                        if os.path.getmtime(os.path.join(root, d)) > indexed_at:
+                            return True
+                    except OSError:
+                        pass
+            return False
+        except OSError:
+            return True
+
     def _mark_indexed(self, conn: sqlite3.Connection, dir_path: str, prefix: str, *, recursive: bool = False) -> None:
-        mtime = self._subtree_mtime(dir_path) if recursive else self._dir_mtime(dir_path)
+        # For recursive dirs, store wall-clock time as mtime so the _is_stale
+        # non-recursive path still has a sensible value if the same row is ever
+        # reused.  _is_stale_recursive uses indexed_at directly, not mtime.
+        mtime = time.time() if recursive else self._dir_mtime(dir_path)
         conn.execute(
             """INSERT INTO indexed_dirs(dir_path, prefix, mtime, indexed_at)
                VALUES(?,?,?,?)
@@ -260,7 +292,7 @@ class SearchIndex:
             return bool(cancelled and cancelled())
 
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 # --- Customer files dirs ---
                 for prefix, base_dir in cf_dirs:
                     if _cancelled():
@@ -502,7 +534,7 @@ class SearchIndex:
     def is_populated(self) -> bool:
         """Return True if the index contains at least one job or blueprint file."""
         try:
-            with self._connect(timeout=2.0) as conn:
+            with closing(self._connect(timeout=2.0)) as conn:
                 row = conn.execute(
                     "SELECT EXISTS(SELECT 1 FROM jobs LIMIT 1)"
                     " OR EXISTS(SELECT 1 FROM bp_files LIMIT 1)"
@@ -542,7 +574,7 @@ class SearchIndex:
             f"SELECT * FROM jobs WHERE ({' OR '.join(conditions)}) "
             f"ORDER BY mtime DESC LIMIT {_MAX_RESULTS}"
         )
-        with self._connect(timeout=5.0) as conn:
+        with closing(self._connect(timeout=5.0)) as conn:
             rows = conn.execute(sql, params).fetchall()
 
         results = []
@@ -568,7 +600,7 @@ class SearchIndex:
             f"SELECT * FROM bp_files WHERE filename LIKE ? ESCAPE '\\' COLLATE NOCASE "
             f"ORDER BY mtime DESC LIMIT {_MAX_RESULTS}"
         )
-        with self._connect(timeout=5.0) as conn:
+        with closing(self._connect(timeout=5.0)) as conn:
             rows = conn.execute(sql, (like,)).fetchall()
 
         results = []
@@ -589,7 +621,7 @@ class SearchIndex:
     def job_count(self) -> int:
         """Return total number of indexed job rows."""
         try:
-            with self._connect(timeout=2.0) as conn:
+            with closing(self._connect(timeout=2.0)) as conn:
                 return conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
         except sqlite3.Error:
             return 0
