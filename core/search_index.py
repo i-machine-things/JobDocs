@@ -444,10 +444,10 @@ class SearchIndex:
                         completed = False
                         walk_failed = False
 
-                        def _on_walk_error(err: OSError) -> None:
+                        def _on_walk_error(err: OSError, _path: str = customer_path) -> None:
                             nonlocal walk_failed
                             walk_failed = True
-                            logger.warning("search_index: os.walk(%s): %s", customer_path, err)
+                            logger.warning("search_index: os.walk(%s): %s", _path, err)
 
                         try:
                             for root, _dirs, files in os.walk(customer_path, onerror=_on_walk_error):
