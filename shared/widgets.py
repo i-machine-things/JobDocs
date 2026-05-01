@@ -37,7 +37,12 @@ atexit.register(_cleanup_dropzone_tmp_dirs)
 
 
 class DropZone(QFrame):
-    """A widget that accepts file drops"""
+    """A widget that accepts file drops.
+
+    # TODO (O-360): drag-and-drop is incomplete — only a fraction of dropped
+    # files are captured; silent failures occur for multi-file drops.
+    # See fix/drag-drop-file-capture branch for the planned fix.
+    """
     files_dropped = pyqtSignal(list)
 
     # Extensions filtered out during email attachment extraction when skip is enabled.
