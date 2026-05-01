@@ -188,6 +188,7 @@ class SearchIndex:
                     self._migrate(conn)
         except sqlite3.Error as exc:
             logger.error("search_index: failed to initialise DB: %s", exc)
+            raise
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -357,6 +358,7 @@ class SearchIndex:
                         # fallback scan never leaves the customer with zero rows.
                         new_job_rows = []
                         scan_cancelled = False
+                        scan_failed = False
 
                         for dir_name, job_docs_path in jobs:
                             if not dir_name or not dir_name[0].isdigit():
@@ -395,9 +397,10 @@ class SearchIndex:
                                         ','.join(drawings), item_path, mtime,
                                     ))
                             except OSError as exc:
+                                scan_failed = True
                                 logger.warning("search_index: fallback scan(%s): %s", customer_path, exc)
 
-                        if not scan_cancelled:
+                        if not scan_cancelled and not scan_failed:
                             conn.execute(
                                 "DELETE FROM jobs WHERE customer=? AND prefix=?",
                                 (customer, prefix),
