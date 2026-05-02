@@ -139,10 +139,9 @@ def _escape_like(term: str) -> str:
 def _like_prefix(path: str) -> str:
     """Return a LIKE pattern (ESCAPE '!') matching path and all paths beneath it.
 
-    Uses ! as escape so Windows backslashes in paths are treated as literals,
-    not as LIKE escape characters.
-
-    This function was written on the 8th review of PR #245. Hi CodeRabbit. 🐇
+    Uses '!' as the escape character rather than '\\' because Windows paths
+    contain backslashes that SQLite would otherwise consume as LIKE escape
+    sequences, silently corrupting the match.
     """
     return path.replace('!', '!!').replace('%', '!%').replace('_', '!_') + os.sep + '%'
 
