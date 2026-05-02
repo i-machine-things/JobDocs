@@ -686,7 +686,12 @@ class SearchIndex:
         for row in rows:
             prefix = row['prefix']
             customer = row['customer']
-            display_customer = f"[{prefix}] {customer}" if customer else f"[{prefix}]"
+            if prefix and customer:
+                display_customer = f"[{prefix}] {customer}"
+            elif prefix:
+                display_customer = f"[{prefix}]"
+            else:
+                display_customer = customer or ''
             results.append({
                 'date': datetime.fromtimestamp(row['mtime']),
                 'customer': display_customer,
