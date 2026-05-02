@@ -956,19 +956,19 @@ It takes about two minutes.</p>""",
 <p>Choose <b>Hard Link</b> as the link type (recommended). JobDocs will link
 blueprint files into job {folder_term}s without copying them.</p>""",
                 "Open Settings",
-                lambda: (dlg.accept(), self.open_settings()),
+                lambda: (dlg.hide(), self.open_settings(), dlg.show()),
             ),
             (
                 "Step 2 — Create your first job",
-                f"""<p>Go to the <b>Create Job</b> tab and fill in the job details:</p>
+                f"""<p>Go to the <b>Job</b> tab and fill in the job details:</p>
 <ul>
   <li>Customer name and job number</li>
   <li>Job description and drawing numbers</li>
 </ul>
 <p>Drag blueprint files onto the drop zone — or browse for them.
 Click <b>Create Job</b> to build the {folder_term} structure and link the files.</p>""",
-                "Go to Create Job",
-                lambda: (dlg.accept(), self._tutorial_go_to_tab("Create Job")),
+                "Go to Job tab",
+                lambda: (dlg.accept(), self._tutorial_go_to_tab("Job")),
             ),
             (
                 "Step 3 — Drop emails with attachments",
