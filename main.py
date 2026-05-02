@@ -749,11 +749,6 @@ class JobDocsMainWindow(QMainWindow):
         # Help menu
         help_menu = menubar.addMenu("&Help")  # pyright: ignore[reportOptionalMemberAccess]
 
-        getting_started_action = help_menu.addAction("&Getting Started")  # pyright: ignore[reportOptionalMemberAccess]
-        getting_started_action.triggered.connect(  # pyright: ignore[reportOptionalMemberAccess]
-            self.show_getting_started
-        )
-
         setup_wizard_action = help_menu.addAction("&Run Setup Wizard...")  # pyright: ignore[reportOptionalMemberAccess]
         setup_wizard_action.triggered.connect(self.run_setup_wizard)  # pyright: ignore[reportOptionalMemberAccess]
 
@@ -968,7 +963,7 @@ blueprint files into job {folder_term}s without copying them.</p>""",
 <p>Drag blueprint files onto the drop zone — or browse for them.
 Click <b>Create Job</b> to build the {folder_term} structure and link the files.</p>""",
                 "Go to Job tab",
-                lambda: (dlg.accept(), self._tutorial_go_to_tab("Job")),
+                lambda: (dlg.accept(), QTimer.singleShot(0, lambda: self._tutorial_go_to_tab("Job"))),
             ),
             (
                 "Step 3 — Drop emails with attachments",
@@ -992,7 +987,7 @@ Both can be changed in <b>Settings</b>.</p>""",
 <p>Results are indexed in the background after first launch, so searches are
 near-instant even across thousands of jobs.</p>""",
                 "Go to Search",
-                lambda: (dlg.accept(), self._tutorial_go_to_tab("Search")),
+                lambda: (dlg.accept(), QTimer.singleShot(0, lambda: self._tutorial_go_to_tab("Search"))),
             ),
             (
                 "You're all set",
