@@ -956,7 +956,7 @@ It takes about two minutes.</p>""",
 <p>Choose <b>Hard Link</b> as the link type (recommended). JobDocs will link
 blueprint files into job {folder_term}s without copying them.</p>""",
                 "Open Settings",
-                self.open_settings,
+                lambda: (dlg.accept(), self.open_settings()),
             ),
             (
                 "Step 2 — Create your first job",
@@ -968,7 +968,7 @@ blueprint files into job {folder_term}s without copying them.</p>""",
 <p>Drag blueprint files onto the drop zone — or browse for them.
 Click <b>Create Job</b> to build the {folder_term} structure and link the files.</p>""",
                 "Go to Create Job",
-                lambda: self._tutorial_go_to_tab("Create Job"),
+                lambda: (dlg.accept(), self._tutorial_go_to_tab("Create Job")),
             ),
             (
                 "Step 3 — Drop emails with attachments",
@@ -992,7 +992,7 @@ Both can be changed in <b>Settings</b>.</p>""",
 <p>Results are indexed in the background after first launch, so searches are
 near-instant even across thousands of jobs.</p>""",
                 "Go to Search",
-                lambda: self._tutorial_go_to_tab("Search"),
+                lambda: (dlg.accept(), self._tutorial_go_to_tab("Search")),
             ),
             (
                 "You're all set",
@@ -1041,9 +1041,11 @@ near-instant even across thousands of jobs.</p>""",
 
         action_btn = QPushButton()
         action_btn.setVisible(False)
+        action_btn.setFixedHeight(32)
+        action_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         action_btn.setStyleSheet(
-            "QPushButton { background: #e3f2fd; border: 1px solid #90caf9;"
-            " border-radius: 4px; padding: 5px 14px; }"
+            "QPushButton { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9;"
+            " border-radius: 4px; padding: 5px 14px; font-weight: bold; }"
             "QPushButton:hover { background: #bbdefb; }"
         )
 
