@@ -991,7 +991,7 @@ near-instant even across thousands of jobs.</p>""",
             ),
             (
                 "You're all set",
-                f"""<p>That covers the core workflow. A few more things worth knowing:</p>
+                """<p>That covers the core workflow. A few more things worth knowing:</p>
 <ul>
   <li><b>Bulk Create</b> tab — create many jobs at once from a CSV file</li>
   <li><b>Help → Run Setup Wizard</b> — re-run first-time configuration any time</li>
