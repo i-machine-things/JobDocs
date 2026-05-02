@@ -956,7 +956,7 @@ It takes about two minutes.</p>""",
 <p>Choose <b>Hard Link</b> as the link type (recommended). JobDocs will link
 blueprint files into job {folder_term}s without copying them.</p>""",
                 "Open Settings",
-                self.show_settings,
+                self.open_settings,
             ),
             (
                 "Step 2 — Create your first job",
